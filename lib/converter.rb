@@ -18,18 +18,31 @@ module PdfToLlmMd
       @adapter = adapter || DoclingAdapter.new(config: @config)
     end
 
-    def convert(input:, output_dir:, title: nil, from_page: 1, to_page: nil)
+    def convert(
+      input:,
+      output_dir:,
+      title: nil,
+      from_page: 1,
+      to_page: nil,
+      progress: nil
+    )
       input = File.expand_path(input)
       raise ArgumentError, "Input PDF not found: #{input}" unless File.file?(input)
       raise ArgumentError, "Input must be a PDF" unless File.extname(input).casecmp?(".pdf")
 
       total_pages = pdf_page_count(input)
+      progress&.call("Inspecting PDF: #{total_pages} pages")
       to_page ||= total_pages
       validate_range!(from_page, to_page, total_pages)
       pages = (from_page..to_page).to_a
 
       FileUtils.mkdir_p(output_dir)
-      page_documents = extract_pages(input: input, pages: pages)
+      page_documents = extract_pages(
+        input: input,
+        pages: pages,
+        total_pages: total_pages,
+        progress: progress
+      )
       markdown = Assembler.new(config: @config).assemble(
         page_documents: page_documents,
         metadata: {
@@ -48,12 +61,29 @@ module PdfToLlmMd
 
     private
 
-    def extract_pages(input:, pages:)
+    def extract_pages(input:, pages:, total_pages:, progress: nil)
       Dir.mktmpdir("pdf-to-llm-md-") do |tmpdir|
         pages.to_h do |page|
-          page_pdf = extract_page(input: input, page: page, tmpdir: tmpdir)
-          page_output = File.join(tmpdir, "docling-page-#{format('%04d', page)}")
-          [page, @adapter.convert(input: page_pdf, output_dir: page_output)]
+          progress&.call("Converting page #{page} of #{total_pages}...")
+    
+          page_pdf = extract_page(
+            input: input,
+            page: page,
+            tmpdir: tmpdir
+          )
+    
+          page_output = File.join(
+            tmpdir,
+            "docling-page-#{format('%04d', page)}"
+          )
+    
+          [
+            page,
+            @adapter.convert(
+              input: page_pdf,
+              output_dir: page_output
+            )
+          ]
         end
       end
     end
