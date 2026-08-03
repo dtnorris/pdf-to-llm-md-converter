@@ -6,7 +6,9 @@ require "pathname"
 
 ROOT = Pathname.new(__dir__).join("..").expand_path
 $LOAD_PATH.unshift(ROOT.join("lib").to_s)
+
 require "converter"
+require "progress_reporter"
 
 options = {
   config: ROOT.join("config", "conversion.yml").to_s,
@@ -16,42 +18,66 @@ options = {
 
 parser = OptionParser.new do |opts|
   opts.banner = "Usage: bin/convert INPUT.pdf [options]"
-  opts.on("-o", "--output-dir DIR", "Output directory (default: build)") { |v| options[:output_dir] = v }
-  opts.on("-c", "--config FILE", "Configuration file") { |v| options[:config] = v }
-  opts.on("--title TITLE", "Document title for front matter") { |v| options[:title] = v }
-  opts.on("--from PAGE", Integer, "First PDF page (default: 1)") { |v| options[:from_page] = v }
-  opts.on("--to PAGE", Integer, "Last PDF page (default: final page)") { |v| options[:to_page] = v }
-  opts.on("-h", "--help", "Show help") { puts opts; exit 0 }
+
+  opts.on(
+    "-o",
+    "--output-dir DIR",
+    "Output directory (default: build)"
+  ) { |value| options[:output_dir] = value }
+
+  opts.on(
+    "-c",
+    "--config FILE",
+    "Configuration file"
+  ) { |value| options[:config] = value }
+
+  opts.on(
+    "--title TITLE",
+    "Document title for front matter"
+  ) { |value| options[:title] = value }
+
+  opts.on(
+    "--from PAGE",
+    Integer,
+    "First PDF page (default: 1)"
+  ) { |value| options[:from_page] = value }
+
+  opts.on(
+    "--to PAGE",
+    Integer,
+    "Last PDF page (default: final page)"
+  ) { |value| options[:to_page] = value }
+
+  opts.on("-h", "--help", "Show help") do
+    puts opts
+    exit 0
+  end
 end
 
 parser.parse!
+
 input = ARGV.shift
 abort(parser.to_s) unless input
 
 begin
-  progress = lambda do |message|
-    puts message
-    $stdout.flush
-  end
+  reporter = PdfToLlmMd::ProgressReporter.new
+  reporter.start
 
-  result = PdfToLlmMd::Converter.new(config_path: options[:config]).convert(
-    input: input,
-    output_dir: options[:output_dir],
-    title: options[:title],
-    from_page: options[:from_page],
-    to_page: options[:to_page],
-    progress: progress
-  )
+  result = PdfToLlmMd::Converter
+    .new(config_path: options[:config])
+    .convert(
+      input: input,
+      output_dir: options[:output_dir],
+      title: options[:title],
+      from_page: options[:from_page],
+      to_page: options[:to_page],
+      progress: reporter
+    )
 
-  puts "Wrote #{result.output_path}"
-  puts "Pages: #{result.pages.first}–#{result.pages.last}"
-  puts "Validation: #{result.validation.valid ? 'PASS' : 'FAIL'}"
-
-  result.validation.warnings.each { |warning| warn "WARNING: #{warning}" }
-  result.validation.errors.each { |error| warn "ERROR: #{error}" }
+  reporter.finish(output_path: result.output_path)
 
   exit(result.validation.valid ? 0 : 2)
-rescue StandardError => e
-  warn "Conversion failed: #{e.class}: #{e.message}"
+rescue StandardError => error
+  warn "Conversion failed: #{error.class}: #{error.message}"
   exit 1
 end
