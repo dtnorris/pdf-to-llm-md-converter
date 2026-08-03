@@ -8,6 +8,32 @@ require "yaml"
 require_relative "../lib/converter"
 
 class ConverterProgressEventsTest < Minitest::Test
+
+  class ConcurrentFakeAdapter
+    attr_reader :maximum_concurrent
+
+    def initialize
+      @active = 0
+      @maximum_concurrent = 0
+      @mutex = Mutex.new
+    end
+
+    def convert(input:, output_dir:)
+      FileUtils.mkdir_p(output_dir)
+
+      @mutex.synchronize do
+        @active += 1
+        @maximum_concurrent = [@maximum_concurrent, @active].max
+      end
+
+      sleep 0.05
+
+      "# Converted #{File.basename(input)}"
+    ensure
+      @mutex.synchronize { @active -= 1 }
+    end
+  end
+
   class FakeAdapter
     def convert(input:, output_dir:)
       FileUtils.mkdir_p(output_dir)
@@ -50,6 +76,95 @@ class ConverterProgressEventsTest < Minitest::Test
       output_path = File.join(tmpdir, "page-#{page}.pdf")
       File.write(output_path, "fake PDF page #{page}")
       output_path
+    end
+  end
+
+  class EightPageTestConverter < TestConverter
+    private
+
+    def pdf_page_count(_input)
+      8
+    end
+  end
+
+  def test_converts_up_to_four_pages_concurrently
+    Dir.mktmpdir do |tmpdir|
+      input_path = File.join(tmpdir, "sample.pdf")
+      output_dir = File.join(tmpdir, "build")
+      config_path = File.join(tmpdir, "conversion.yml")
+
+      File.write(input_path, "%PDF fake fixture")
+
+      File.write(
+        config_path,
+        {
+          "output" => {
+            "filename_suffix" => "_LLM_Edition.md"
+          },
+          "validation" => {
+            "require_page_markers" => true,
+            "minimum_characters_per_page" => 0,
+            "maximum_blank_page_ratio" => 1.0,
+            "flag_patterns" => []
+          }
+        }.to_yaml
+      )
+
+      adapter = ConcurrentFakeAdapter.new
+
+      converter = EightPageTestConverter.new(
+        config_path: config_path,
+        adapter: adapter
+      )
+
+      converter.convert(
+        input: input_path,
+        output_dir: output_dir
+      )
+
+      assert_equal 4, adapter.maximum_concurrent
+    end
+  end
+
+  def test_honors_parallel_worker_configuration
+    Dir.mktmpdir do |tmpdir|
+      input_path = File.join(tmpdir, "sample.pdf")
+      output_dir = File.join(tmpdir, "build")
+      config_path = File.join(tmpdir, "conversion.yml")
+
+      File.write(input_path, "%PDF fake fixture")
+
+      File.write(
+        config_path,
+        {
+          "processing" => {
+            "parallel_workers" => 3
+          },
+          "output" => {
+            "filename_suffix" => "_LLM_Edition.md"
+          },
+          "validation" => {
+            "require_page_markers" => true,
+            "minimum_characters_per_page" => 0,
+            "maximum_blank_page_ratio" => 1.0,
+            "flag_patterns" => []
+          }
+        }.to_yaml
+      )
+
+      adapter = ConcurrentFakeAdapter.new
+
+      converter = EightPageTestConverter.new(
+        config_path: config_path,
+        adapter: adapter
+      )
+
+      converter.convert(
+        input: input_path,
+        output_dir: output_dir
+      )
+
+      assert_equal 3, adapter.maximum_concurrent
     end
   end
 
