@@ -4,3 +4,8 @@
 **/.DS_Store
 build/*
 KP-Labyrinth-Adventures.pdf
+
+# Vim swap files
+*.swp
+*.swo
+*~
