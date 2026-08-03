@@ -83,33 +83,59 @@ module PdfToLlmMd
 
     def extract_pages(input:, pages:, progress: nil)
       Dir.mktmpdir("pdf-to-llm-md-") do |tmpdir|
+        worker_count = Integer(
+          @config.dig("processing", "parallel_workers") || 4
+        ).clamp(1, 8)
+
+        worker_count = 1 if worker_count < 1
+        worker_count = 8 if worker_count > 8
+
+        queue = Queue.new
+        pages.each { |page| queue << page }
+    
         documents = {}
+        completed = 0
+        mutex = Mutex.new
     
-        pages.each_with_index do |page, index|
-          page_pdf = extract_page(
-            input: input,
-            page: page,
-            tmpdir: tmpdir
-          )
+        workers = worker_count.times.map do
+          Thread.new do
+            loop do
+              page = queue.pop(true)
     
-          page_output = File.join(
-            tmpdir,
-            "docling-page-#{format('%04d', page)}"
-          )
+              page_pdf = extract_page(
+                input: input,
+                page: page,
+                tmpdir: tmpdir
+              )
     
-          documents[page] = @adapter.convert(
-            input: page_pdf,
-            output_dir: page_output
-          )
+              page_output = File.join(
+                tmpdir,
+                "docling-page-#{format('%04d', page)}"
+              )
     
-          notify(
-            progress,
-            :advance,
-            current: index + 1,
-            total_pages: pages.length
-          )
+              markdown = @adapter.convert(
+                input: page_pdf,
+                output_dir: page_output
+              )
+    
+              mutex.synchronize do
+                documents[page] = markdown
+                completed += 1
+    
+                notify(
+                  progress,
+                  :advance,
+                  current: completed,
+                  total_pages: pages.length
+                )
+              end
+            rescue ThreadError
+              break
+            end
+          end
         end
     
+        workers.each(&:join)
         documents
       end
     end

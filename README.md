@@ -68,8 +68,10 @@ Those should only be added after the fixture reveals a concrete need.
 # Steps to test/run smoke test:
 
 ```bash
-bin/convert fixtures/labyrinth_sample_2_pages.pdf --title "Labyrinth Adventures — Pilot Sample" --output-dir build
+OMP_NUM_THREADS=2 && time bin/convert fixtures/labyrinth_sample_15_pages.pdf --title "Labyrinth Benchmark" --output-dir build
 ```
+(should run in about 1 min)
+
 
 ```bash
 bundle exec rake test

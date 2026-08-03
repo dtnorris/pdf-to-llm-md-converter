@@ -3,7 +3,7 @@ converter:
   adapter: docling
   executable: docling
   # Tokens available to the adapter: %{input}, %{output_dir}
-  command: '%{executable} "%{input}" --to md --output "%{output_dir}" --image-export-mode placeholder'
+  command: '%{executable} "%{input}" --to md --output "%{output_dir}" --image-export-mode placeholder --no-ocr'
   timeout_seconds: 600
 
 processing:
@@ -12,6 +12,7 @@ processing:
   keep_intermediate_pages: false
   normalize_line_endings: true
   collapse_excess_blank_lines: true
+  parallel_workers: 4
 
 output:
   filename_suffix: _LLM_Edition.md
