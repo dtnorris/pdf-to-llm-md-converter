@@ -29,8 +29,18 @@ module PdfToLlmMd
       short_pages = expected_pages.select { |page| page_bodies.fetch(page, "").strip.length < minimum }
       warnings << "Pages below #{minimum} characters: #{short_pages.join(', ')}" unless short_pages.empty?
 
+      flagged_pages = []
+
       flag_patterns.each do |pattern|
-        warnings << "Flagged pattern found: #{pattern.inspect}" if markdown.match?(Regexp.new(pattern))
+        regexp = Regexp.new(pattern)
+        matching_pages = expected_pages.select do |page|
+          page_bodies.fetch(page, "").match?(regexp)
+        end
+
+        next if matching_pages.empty?
+
+        flagged_pages.concat(matching_pages)
+        warnings << "Flagged pattern found on pages #{matching_pages.join(', ')}: #{pattern.inspect}"
       rescue RegexpError
         warnings << "Invalid validation pattern in configuration: #{pattern.inspect}"
       end
@@ -46,7 +56,10 @@ module PdfToLlmMd
         stats: {
           expected_pages: expected_pages.length,
           page_markers: markers.length,
+          missing_pages: missing.freeze,
+          duplicate_pages: duplicates.freeze,
           short_pages: short_pages.length,
+          flagged_pages: flagged_pages.uniq.sort.freeze,
           characters: markdown.length
         }.freeze
       )

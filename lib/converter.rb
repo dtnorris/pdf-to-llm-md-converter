@@ -31,16 +31,22 @@ module PdfToLlmMd
       raise ArgumentError, "Input must be a PDF" unless File.extname(input).casecmp?(".pdf")
 
       total_pages = pdf_page_count(input)
-      progress&.call("Inspecting PDF: #{total_pages} pages")
+      notify(progress, :inspect_pdf, total_pages: total_pages)
       to_page ||= total_pages
       validate_range!(from_page, to_page, total_pages)
+      
       pages = (from_page..to_page).to_a
-
+      
+      notify(
+        progress,
+        :start_conversion,
+        total_pages: pages.length
+      )
+      
       FileUtils.mkdir_p(output_dir)
       page_documents = extract_pages(
         input: input,
         pages: pages,
-        total_pages: total_pages,
         progress: progress
       )
       markdown = Assembler.new(config: @config).assemble(
@@ -55,17 +61,31 @@ module PdfToLlmMd
 
       output_path = File.join(output_dir, output_filename(input))
       File.write(output_path, markdown, encoding: "UTF-8")
-      validation = Validator.new(config: @config).validate(markdown: markdown, expected_pages: pages)
-      ConversionResult.new(output_path: output_path, validation: validation, pages: pages.freeze)
+      validation = Validator.new(config: @config).validate(
+        markdown: markdown,
+        expected_pages: pages
+      )
+      
+      notify(
+        progress,
+        :validation,
+        result: validation
+      )
+      
+      ConversionResult.new(
+        output_path: output_path,
+        validation: validation,
+        pages: pages.freeze
+      )
     end
 
     private
 
-    def extract_pages(input:, pages:, total_pages:, progress: nil)
+    def extract_pages(input:, pages:, progress: nil)
       Dir.mktmpdir("pdf-to-llm-md-") do |tmpdir|
-        pages.to_h do |page|
-          progress&.call("Converting page #{page} of #{total_pages}...")
+        documents = {}
     
+        pages.each_with_index do |page, index|
           page_pdf = extract_page(
             input: input,
             page: page,
@@ -77,14 +97,20 @@ module PdfToLlmMd
             "docling-page-#{format('%04d', page)}"
           )
     
-          [
-            page,
-            @adapter.convert(
-              input: page_pdf,
-              output_dir: page_output
-            )
-          ]
+          documents[page] = @adapter.convert(
+            input: page_pdf,
+            output_dir: page_output
+          )
+    
+          notify(
+            progress,
+            :advance,
+            current: index + 1,
+            total_pages: pages.length
+          )
         end
+    
+        documents
       end
     end
 
@@ -124,6 +150,26 @@ module PdfToLlmMd
     def output_filename(input)
       suffix = @config.dig("output", "filename_suffix").to_s
       "#{File.basename(input, '.pdf').tr(' ', '_')}#{suffix}"
+    end
+
+    def notify(progress, event, **payload)
+      return unless progress
+    
+      if progress.respond_to?(event)
+        progress.public_send(event, **payload)
+      elsif progress.respond_to?(:call)
+        message = legacy_progress_message(event, payload)
+        progress.call(message) if message
+      end
+    end
+    
+    def legacy_progress_message(event, payload)
+      case event
+      when :inspect_pdf
+        "Inspecting PDF: #{payload.fetch(:total_pages)} pages"
+      when :advance
+        "Converted page #{payload.fetch(:current)} of #{payload.fetch(:total_pages)}"
+      end
     end
   end
 end
