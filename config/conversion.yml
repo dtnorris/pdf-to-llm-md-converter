@@ -1,0 +1,29 @@
+---
+converter:
+  adapter: docling
+  executable: docling
+  # Tokens available to the adapter: %{input}, %{output_dir}
+  command: '%{executable} "%{input}" --to md --output "%{output_dir}" --image-export-mode placeholder'
+  timeout_seconds: 600
+
+processing:
+  page_mode: per_page
+  page_separator_command: 'pdfseparate -f %{page} -l %{page} "%{input}" "%{output_pattern}"'
+  keep_intermediate_pages: false
+  normalize_line_endings: true
+  collapse_excess_blank_lines: true
+
+output:
+  filename_suffix: _LLM_Edition.md
+  include_front_matter: true
+  conversion_label: "Deterministic Converter Pilot 0.1"
+  image_placeholder: "[Image or figure detected by converter]"
+
+validation:
+  require_page_markers: true
+  minimum_characters_per_page: 20
+  maximum_blank_page_ratio: 0.25
+  flag_patterns:
+    - "�"
+    - "\\x00"
+    - "ERROR"

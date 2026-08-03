@@ -1,0 +1,49 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require "pathname"
+
+ROOT = Pathname.new(__dir__).join("..").expand_path
+$LOAD_PATH.unshift(ROOT.join("lib").to_s)
+require "converter"
+
+options = {
+  config: ROOT.join("config", "conversion.yml").to_s,
+  output_dir: ROOT.join("build").to_s,
+  from_page: 1
+}
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/convert INPUT.pdf [options]"
+  opts.on("-o", "--output-dir DIR", "Output directory (default: build)") { |v| options[:output_dir] = v }
+  opts.on("-c", "--config FILE", "Configuration file") { |v| options[:config] = v }
+  opts.on("--title TITLE", "Document title for front matter") { |v| options[:title] = v }
+  opts.on("--from PAGE", Integer, "First PDF page (default: 1)") { |v| options[:from_page] = v }
+  opts.on("--to PAGE", Integer, "Last PDF page (default: final page)") { |v| options[:to_page] = v }
+  opts.on("-h", "--help", "Show help") { puts opts; exit 0 }
+end
+
+parser.parse!
+input = ARGV.shift
+abort(parser.to_s) unless input
+
+begin
+  result = PdfToLlmMd::Converter.new(config_path: options[:config]).convert(
+    input: input,
+    output_dir: options[:output_dir],
+    title: options[:title],
+    from_page: options[:from_page],
+    to_page: options[:to_page]
+  )
+
+  puts "Wrote #{result.output_path}"
+  puts "Pages: #{result.pages.first}–#{result.pages.last}"
+  puts "Validation: #{result.validation.valid ? 'PASS' : 'FAIL'}"
+  result.validation.warnings.each { |warning| warn "WARNING: #{warning}" }
+  result.validation.errors.each { |error| warn "ERROR: #{error}" }
+  exit(result.validation.valid ? 0 : 2)
+rescue StandardError => e
+  warn "Conversion failed: #{e.class}: #{e.message}"
+  exit 1
+end
