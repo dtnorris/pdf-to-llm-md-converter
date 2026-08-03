@@ -29,19 +29,27 @@ input = ARGV.shift
 abort(parser.to_s) unless input
 
 begin
+  progress = lambda do |message|
+    puts message
+    $stdout.flush
+  end
+
   result = PdfToLlmMd::Converter.new(config_path: options[:config]).convert(
     input: input,
     output_dir: options[:output_dir],
     title: options[:title],
     from_page: options[:from_page],
-    to_page: options[:to_page]
+    to_page: options[:to_page],
+    progress: progress
   )
 
   puts "Wrote #{result.output_path}"
   puts "Pages: #{result.pages.first}–#{result.pages.last}"
   puts "Validation: #{result.validation.valid ? 'PASS' : 'FAIL'}"
+
   result.validation.warnings.each { |warning| warn "WARNING: #{warning}" }
   result.validation.errors.each { |error| warn "ERROR: #{error}" }
+
   exit(result.validation.valid ? 0 : 2)
 rescue StandardError => e
   warn "Conversion failed: #{e.class}: #{e.message}"
