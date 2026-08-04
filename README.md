@@ -28,6 +28,11 @@ pdfinfo -v
 docling --help
 ```
 
+## Normal Startup
+```bash
+source .venv/bin/activate
+```
+
 ## Convert the fixture
 
 ```bash
