@@ -141,22 +141,58 @@ module PdfToLlmMd
     end
 
     def extract_page(input:, page:, tmpdir:)
-      output_pattern = File.join(tmpdir, "page-%d.pdf")
-      template = @config.dig("processing", "page_separator_command").to_s
-      command = format(
-        template,
-        page: page,
-        input: File.expand_path(input),
-        output_pattern: output_pattern
-      )
-      stdout, stderr, status = Open3.capture3(command)
-      raise AdapterError, "Page extraction failed for page #{page}: #{stderr}\n#{stdout}" unless status.success?
+      path = File.join(tmpdir, "page-#{page}.pdf")
 
-      path = format(output_pattern, page)
+      command = [
+        "qpdf",
+        File.expand_path(input),
+        "--pages",
+        ".",
+        page.to_s,
+        "--",
+        path
+      ]
+
+      stdout, stderr, status = Open3.capture3(*command)
+
+      unless status.success?
+        raise AdapterError, <<~MESSAGE
+          Page extraction failed for page #{page}
+          Command: #{command.inspect}
+          Exit status: #{status.exitstatus}
+
+          STDOUT:
+          #{stdout}
+
+          STDERR:
+          #{stderr}
+        MESSAGE
+      end
+
       raise AdapterError, "Page extractor did not create #{path}" unless File.file?(path)
+
+      validate_extracted_page!(path, page)
 
       path
     end
+
+    def validate_extracted_page!(path, page)
+      stdout, stderr, status = Open3.capture3("qpdf", "--check", path)
+
+      return if status.success?
+
+      raise AdapterError, <<~MESSAGE
+        Extracted PDF for page #{page} is invalid: #{path}
+
+        qpdf exit status: #{status.exitstatus}
+
+        STDOUT:
+        #{stdout}
+
+        STDERR:
+        #{stderr}
+      MESSAGE
+    end 
 
     def pdf_page_count(input)
       stdout, stderr, status = Open3.capture3("pdfinfo", input)
