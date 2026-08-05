@@ -23,7 +23,29 @@ module PdfToLlmMd
       end
 
       markdown_path = locate_markdown(output_dir, input)
-      raise AdapterError, "Docling produced no Markdown file in #{output_dir}" unless markdown_path
+      unless markdown_path
+        files = Dir.glob(
+          File.join(output_dir, "**", "*"),
+          File::FNM_DOTMATCH
+        ).reject do |path|
+          [".", ".."].include?(File.basename(path))
+        end
+
+        raise AdapterError, <<~MESSAGE
+          Docling produced no Markdown file in #{output_dir}
+          Command: #{command.inspect}
+          Exit status: #{status.exitstatus}
+
+          STDOUT:
+          #{stdout}
+
+          STDERR:
+          #{stderr}
+
+          Files produced:
+          #{files.empty? ? "(none)" : files.join("\n")}
+        MESSAGE
+      end
 
       File.read(markdown_path, encoding: "UTF-8")
     end
