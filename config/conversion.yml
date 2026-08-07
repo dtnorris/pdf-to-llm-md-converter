@@ -5,6 +5,7 @@ converter:
   # Tokens available to the adapter: %{input}, %{output_dir}
   command: '%{executable} "%{input}" --to md --output "%{output_dir}" --image-export-mode placeholder --no-ocr'
   timeout_seconds: 600
+  ocr_min_text_characters: 20
 
 processing:
   page_mode: per_page
