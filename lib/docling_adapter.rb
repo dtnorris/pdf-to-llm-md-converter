@@ -9,6 +9,8 @@ module PdfToLlmMd
   class AdapterError < StandardError; end
 
   class DoclingAdapter
+    DEFAULT_OCR_MIN_TEXT_CHARACTERS = 20
+
     def initialize(config:)
       @config = config
     end
@@ -16,6 +18,7 @@ module PdfToLlmMd
     def convert(input:, output_dir:)
       FileUtils.mkdir_p(output_dir)
       command = render_command(input: input, output_dir: output_dir)
+      command = enable_ocr(command) if ocr_required?(input)
       stdout, stderr, status = run(command)
 
       unless status.success?
@@ -69,6 +72,34 @@ module PdfToLlmMd
       )
     rescue KeyError => e
       raise AdapterError, "Invalid converter command template: #{e.message}"
+    end
+
+    def ocr_required?(input)
+      stdout, _stderr, status = Open3.capture3(
+        "pdftotext",
+        "-layout",
+        File.expand_path(input),
+        "-"
+      )
+
+      return true unless status.success?
+
+      stdout.gsub(/\s+/, "").length < ocr_min_text_characters
+    rescue Errno::ENOENT
+      true
+    end
+
+    def ocr_min_text_characters
+      configured = @config.dig("converter", "ocr_min_text_characters")
+      return DEFAULT_OCR_MIN_TEXT_CHARACTERS if configured.nil?
+
+      Integer(configured)
+    rescue ArgumentError, TypeError
+      DEFAULT_OCR_MIN_TEXT_CHARACTERS
+    end
+
+    def enable_ocr(command)
+      command.sub(/\s+--no-ocr\b/, "")
     end
 
     def run(command)
