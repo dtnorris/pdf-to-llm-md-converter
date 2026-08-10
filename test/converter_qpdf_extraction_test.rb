@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "minitest/autorun"
+require "minitest/mock"
 require "tmpdir"
 require "yaml"
 require_relative "../lib/converter"
@@ -106,7 +107,7 @@ class ConverterQpdfExtractionTest < Minitest::Test
           [
             "checking malformed page",
             "unable to find /Root dictionary",
-            FakeStatus.new(false, 3)
+            FakeStatus.new(false, 2)
           ]
         end
       end
@@ -122,9 +123,32 @@ class ConverterQpdfExtractionTest < Minitest::Test
         end
 
         assert_includes error.message, "Extracted PDF for page 6 is invalid"
-        assert_includes error.message, "qpdf exit status: 3"
+        assert_includes error.message, "qpdf exit status: 2"
         assert_includes error.message, "checking malformed page"
         assert_includes error.message, "unable to find /Root dictionary"
+      end
+    end
+  end
+
+  def test_validate_extracted_page_accepts_qpdf_warnings
+    Dir.mktmpdir do |tmpdir|
+      converter = build_converter(tmpdir)
+
+      Open3.stub(
+        :capture3,
+        [
+          "checking page.pdf",
+          "qpdf: operation succeeded with warnings",
+          FakeStatus.new(false, 3)
+        ]
+      ) do
+        result = converter.send(
+          :validate_extracted_page!,
+          "/tmp/page-1.pdf",
+          1
+        )
+
+        assert_nil result
       end
     end
   end
