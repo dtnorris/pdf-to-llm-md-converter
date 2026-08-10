@@ -179,7 +179,7 @@ module PdfToLlmMd
     def validate_extracted_page!(path, page)
       stdout, stderr, status = Open3.capture3("qpdf", "--check", path)
 
-      return if status.success?
+      return if [0, 3].include?(status.exitstatus)
 
       raise AdapterError, <<~MESSAGE
         Extracted PDF for page #{page} is invalid: #{path}
