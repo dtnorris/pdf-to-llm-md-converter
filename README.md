@@ -72,8 +72,13 @@ Those should only be added after the fixture reveals a concrete need.
 
 # Steps to test/run smoke test:
 
+## Normal Startup
 ```bash
-OMP_NUM_THREADS=2 && time bin/convert fixtures/labyrinth_sample_15_pages.pdf --title "Labyrinth Benchmark" --output-dir build
+source .venv/bin/activate
+```
+
+```bash
+OMP_NUM_THREADS=2 && bin/convert ~/Library/CloudStorage/ProtonDrive-dtnorris@pm.me-folder/<pdf> --title "<title>" --output-dir build
 ```
 (should run in about 1 min)
 
