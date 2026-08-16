@@ -153,11 +153,47 @@ class ConverterQpdfExtractionTest < Minitest::Test
     end
   end
 
+  def test_convert_passes_pdf_page_labels_into_assembled_markers
+    Dir.mktmpdir do |tmpdir|
+      input = File.join(tmpdir, "book.pdf")
+      output_dir = File.join(tmpdir, "build")
+      File.write(input, "%PDF fake fixture")
+      adapter = Object.new
+      adapter.define_singleton_method(:convert) { |input:, output_dir:| "Converted page" }
+      converter = build_converter(tmpdir, adapter: adapter)
+
+      capture3 = lambda do |*command|
+        if command.first == "pdfinfo"
+          ["Pages:          27\n", "", FakeStatus.new(true, 0)]
+        elsif command[1] == "--check"
+          ["checking extracted page", "", FakeStatus.new(true, 0)]
+        else
+          File.write(command.last, "%PDF extracted page")
+          ["", "", FakeStatus.new(true, 0)]
+        end
+      end
+
+      PdfToLlmMd::PageLabels.stub(:extract, { 27 => "24" }) do
+        Open3.stub(:capture3, capture3) do
+          result = converter.convert(
+            input: input,
+            output_dir: output_dir,
+            from_page: 27,
+            to_page: 27
+          )
+
+          markdown = File.read(result.output_path)
+          assert_includes markdown, "<!-- PDF Page 27 -->\n<!-- Printed Page 24 -->"
+        end
+      end
+    end
+  end
+
   private
 
-  def build_converter(tmpdir)
+  def build_converter(tmpdir, adapter: nil)
     config_path = File.join(tmpdir, "conversion.yml")
     File.write(config_path, {}.to_yaml)
-    PdfToLlmMd::Converter.new(config_path: config_path)
+    PdfToLlmMd::Converter.new(config_path: config_path, adapter: adapter)
   end
 end

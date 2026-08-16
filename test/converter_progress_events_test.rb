@@ -72,6 +72,10 @@ class ConverterProgressEventsTest < Minitest::Test
       3
     end
 
+    def pdf_page_labels(_input, _pages)
+      {}
+    end
+
     def extract_page(input:, page:, tmpdir:)
       output_path = File.join(tmpdir, "page-#{page}.pdf")
       File.write(output_path, "fake PDF page #{page}")

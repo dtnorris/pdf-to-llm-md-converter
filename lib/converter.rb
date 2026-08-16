@@ -7,6 +7,7 @@ require "tmpdir"
 require "yaml"
 require_relative "assembler"
 require_relative "docling_adapter"
+require_relative "page_labels"
 require_relative "validator"
 
 module PdfToLlmMd
@@ -36,6 +37,7 @@ module PdfToLlmMd
       validate_range!(from_page, to_page, total_pages)
       
       pages = (from_page..to_page).to_a
+      page_labels = pdf_page_labels(input, pages)
       
       notify(
         progress,
@@ -51,6 +53,7 @@ module PdfToLlmMd
       )
       markdown = Assembler.new(config: @config).assemble(
         page_documents: page_documents,
+        page_labels: page_labels,
         metadata: {
           title: title || File.basename(input, ".pdf"),
           source_pdf: File.basename(input),
@@ -193,6 +196,10 @@ module PdfToLlmMd
         #{stderr}
       MESSAGE
     end 
+
+    def pdf_page_labels(input, pages)
+      PageLabels.extract(input: input, pages: pages)
+    end
 
     def pdf_page_count(input)
       stdout, stderr, status = Open3.capture3("pdfinfo", input)
