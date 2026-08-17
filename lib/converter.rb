@@ -7,6 +7,10 @@ require "tmpdir"
 require "yaml"
 require_relative "assembler"
 require_relative "docling_adapter"
+require_relative "page_labels"
+require_relative "page_number_sequence"
+require_relative "visible_page_numbers"
+require_relative "visual_page_numbers"
 require_relative "validator"
 
 module PdfToLlmMd
@@ -36,6 +40,38 @@ module PdfToLlmMd
       validate_range!(from_page, to_page, total_pages)
       
       pages = (from_page..to_page).to_a
+      page_labels = pdf_page_labels(input, pages)
+      missing_page_labels = pages.reject { |page| page_labels.key?(page) }
+      unless missing_page_labels.empty?
+        visible_page_numbers = pdf_visible_page_numbers(
+          input,
+          missing_page_labels,
+          total_pages
+        )
+        page_labels = visible_page_numbers.merge(page_labels).freeze
+      end
+
+      missing_page_labels = pages.reject { |page| page_labels.key?(page) }
+      unless missing_page_labels.empty?
+        visual_page_numbers = pdf_visual_page_numbers(
+          input,
+          missing_page_labels,
+          total_pages,
+          page_labels,
+          progress
+        )
+        page_labels = visual_page_numbers.merge(page_labels).freeze
+      end
+
+      missing_page_labels = pages.reject { |page| page_labels.key?(page) }
+      unless missing_page_labels.empty?
+        inferred_page_numbers = pdf_inferred_page_numbers(
+          pages,
+          total_pages,
+          page_labels
+        )
+        page_labels = inferred_page_numbers.merge(page_labels).freeze
+      end
       
       notify(
         progress,
@@ -51,6 +87,7 @@ module PdfToLlmMd
       )
       markdown = Assembler.new(config: @config).assemble(
         page_documents: page_documents,
+        page_labels: page_labels,
         metadata: {
           title: title || File.basename(input, ".pdf"),
           source_pdf: File.basename(input),
@@ -193,6 +230,51 @@ module PdfToLlmMd
         #{stderr}
       MESSAGE
     end 
+
+    def pdf_page_labels(input, pages)
+      PageLabels.extract(input: input, pages: pages)
+    end
+
+    def pdf_visible_page_numbers(input, pages, total_pages)
+      VisiblePageNumbers.extract(
+        input: input,
+        pages: pages,
+        total_pages: total_pages
+      )
+    end
+
+    def pdf_visual_page_numbers(input, pages, total_pages, known_labels, progress = nil)
+      preprocessing_progress = if progress
+        lambda do |current:, total_pages:|
+          if current.zero?
+            notify(progress, :start_preprocessing, total_pages: total_pages)
+          else
+            notify(
+              progress,
+              :preprocessing_advance,
+              current: current,
+              total_pages: total_pages
+            )
+          end
+        end
+      end
+
+      VisualPageNumbers.extract(
+        input: input,
+        pages: pages,
+        total_pages: total_pages,
+        known_labels: known_labels,
+        progress: preprocessing_progress
+      )
+    end
+
+    def pdf_inferred_page_numbers(pages, total_pages, known_labels)
+      PageNumberSequence.infer(
+        pages: pages,
+        known_labels: known_labels,
+        total_pages: total_pages
+      )
+    end
 
     def pdf_page_count(input)
       stdout, stderr, status = Open3.capture3("pdfinfo", input)

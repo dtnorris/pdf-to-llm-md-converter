@@ -58,6 +58,23 @@ class ProgressReporterTest < Minitest::Test
                     "build/Labyrinth_Adventures_LLM_Edition.md"
   end
 
+
+  def test_renders_preprocessing_progress_bar
+    output = StringIO.new
+    reporter = PdfToLlmMd::ProgressReporter.new(io: output)
+
+    reporter.start_preprocessing(total_pages: 5)
+    reporter.preprocessing_advance(current: 2, total_pages: 5)
+    reporter.preprocessing_advance(current: 5, total_pages: 5)
+
+    rendered = output.string
+
+    assert_includes rendered, "Preprocessing printed page numbers..."
+    assert_includes rendered, "[                    ] 0/5"
+    assert_includes rendered, "[========            ] 2/5"
+    assert_includes rendered, "[====================] 5/5"
+  end
+
   def test_renders_clean_validation_summary
     output = StringIO.new
     reporter = PdfToLlmMd::ProgressReporter.new(io: output)

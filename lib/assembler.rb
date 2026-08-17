@@ -9,12 +9,12 @@ module PdfToLlmMd
       @config = config
     end
 
-    def assemble(page_documents:, metadata: {})
+    def assemble(page_documents:, page_labels: {}, metadata: {})
       sections = []
       sections << front_matter(metadata) if include_front_matter?
 
       page_documents.sort_by { |page, _| page }.each do |page, markdown|
-        sections << PageMarker.render(page)
+        sections << PageMarker.render(page, page_label: page_labels[page])
         sections << normalize(markdown)
       end
 
