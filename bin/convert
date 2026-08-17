@@ -33,7 +33,7 @@ parser = OptionParser.new do |opts|
 
   opts.on(
     "--title TITLE",
-    "Document title for front matter"
+    "Document title for front matter and output filename"
   ) { |value| options[:title] = value }
 
   opts.on(

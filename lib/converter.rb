@@ -38,6 +38,7 @@ module PdfToLlmMd
       notify(progress, :inspect_pdf, total_pages: total_pages)
       to_page ||= total_pages
       validate_range!(from_page, to_page, total_pages)
+      resolved_title = resolve_title(input, title)
       
       pages = (from_page..to_page).to_a
       page_labels = pdf_page_labels(input, pages)
@@ -89,14 +90,14 @@ module PdfToLlmMd
         page_documents: page_documents,
         page_labels: page_labels,
         metadata: {
-          title: title || File.basename(input, ".pdf"),
+          title: resolved_title,
           source_pdf: File.basename(input),
           page_count: total_pages,
           page_range: "PDF pages #{from_page}–#{to_page}"
         }
       )
 
-      output_path = File.join(output_dir, output_filename(input))
+      output_path = File.join(output_dir, output_filename(resolved_title))
       File.write(output_path, markdown, encoding: "UTF-8")
       validation = Validator.new(config: @config).validate(
         markdown: markdown,
@@ -291,9 +292,17 @@ module PdfToLlmMd
       raise ArgumentError, "Page range must be within 1–#{total_pages}" unless valid
     end
 
-    def output_filename(input)
+    def resolve_title(input, title)
+      value = title.to_s.strip
+      return value unless value.empty?
+
+      File.basename(input, File.extname(input))
+    end
+
+    def output_filename(title)
       suffix = @config.dig("output", "filename_suffix").to_s
-      "#{File.basename(input, '.pdf').tr(' ', '_')}#{suffix}"
+      stem = title.gsub(/[\/\\\s\x00-\x1f]+/, "_")
+      "#{stem}#{suffix}"
     end
 
     def notify(progress, event, **payload)
