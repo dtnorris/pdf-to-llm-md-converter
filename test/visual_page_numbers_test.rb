@@ -116,6 +116,23 @@ class VisualPageNumbersTest < Minitest::Test
     end
   end
 
+
+  def test_reports_progress_for_each_visual_page_inspected
+    updates = []
+
+    with_fake_tools(responses: {}) do
+      PdfToLlmMd::VisualPageNumbers.extract(
+        input: "/tmp/book.pdf",
+        pages: [27, 28, 29],
+        total_pages: 290,
+        progress: ->(**payload) { updates << payload }
+      )
+    end
+
+    assert_equal [0, 1, 2, 3, 4, 5], updates.map { |update| update.fetch(:current) }
+    assert_equal [5], updates.map { |update| update.fetch(:total_pages) }.uniq
+  end
+
   def test_returns_empty_mapping_when_pdf_geometry_cannot_be_read
     status = FakeStatus.new(false)
     Open3.stub(:capture3, ["", "broken pdf", status]) do

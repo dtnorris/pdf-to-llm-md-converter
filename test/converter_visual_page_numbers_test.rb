@@ -26,7 +26,7 @@ class ConverterVisualPageNumbersTest < Minitest::Test
       { 2 => "11" }
     end
 
-    def pdf_visual_page_numbers(_input, pages, _total_pages, known_labels)
+    def pdf_visual_page_numbers(_input, pages, _total_pages, known_labels, _progress = nil)
       @visual_pages_requested = pages
       @visual_known_labels = known_labels
       { 3 => "12" }

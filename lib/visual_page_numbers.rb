@@ -19,10 +19,11 @@ module PdfToLlmMd
     }.freeze
     WORKER_COUNT = 2
 
-    def self.extract(input:, pages:, total_pages:, known_labels: {})
+    def self.extract(input:, pages:, total_pages:, known_labels: {}, progress: nil)
       new(input: input, total_pages: total_pages).numbers_for(
         pages,
-        known_labels: known_labels
+        known_labels: known_labels,
+        progress: progress
       )
     end
 
@@ -32,7 +33,7 @@ module PdfToLlmMd
       raise ArgumentError, "total_pages must be positive" unless @total_pages.positive?
     end
 
-    def numbers_for(pages, known_labels: {})
+    def numbers_for(pages, known_labels: {}, progress: nil)
       requested_pages = Array(pages).map { |page| validate_page!(page) }.uniq.sort
       return {}.freeze if requested_pages.empty?
 
@@ -43,7 +44,11 @@ module PdfToLlmMd
 
       pages_to_ocr = inspection_pages.reject { |page| known_numeric.key?(page) }
       geometries = load_page_geometries(pages_to_ocr)
-      visual_candidates = detect_candidates(pages_to_ocr, geometries)
+      visual_candidates = detect_candidates(
+        pages_to_ocr,
+        geometries,
+        progress: progress
+      )
 
       candidates = known_numeric.transform_values { |value| [value].freeze }.merge(visual_candidates)
 
@@ -104,13 +109,16 @@ module PdfToLlmMd
       {}.freeze
     end
 
-    def detect_candidates(pages, geometries)
+    def detect_candidates(pages, geometries, progress: nil)
       pages = pages.select { |page| geometries.key?(page) }
       return {}.freeze if pages.empty?
+
+      progress&.call(current: 0, total_pages: pages.length)
 
       queue = Queue.new
       pages.each { |page| queue << page }
       results = {}
+      completed = 0
       mutex = Mutex.new
       worker_count = [WORKER_COUNT, pages.length].min
 
@@ -120,7 +128,14 @@ module PdfToLlmMd
             loop do
               page = queue.pop(true)
               candidates = candidates_for_page(page, geometries.fetch(page), tmpdir)
-              mutex.synchronize { results[page] = candidates }
+              mutex.synchronize do
+                results[page] = candidates
+                completed += 1
+                progress&.call(
+                  current: completed,
+                  total_pages: pages.length
+                )
+              end
             rescue ThreadError
               break
             end

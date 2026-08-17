@@ -22,6 +22,18 @@ module PdfToLlmMd
       flush
     end
 
+    def start_preprocessing(total_pages:)
+      @io.puts
+      @io.puts "Preprocessing printed page numbers..."
+      render_bar(current: 0, total_pages: total_pages)
+    end
+
+    def preprocessing_advance(current:, total_pages:)
+      render_bar(current: current, total_pages: total_pages)
+      @io.puts if current >= total_pages
+      flush
+    end
+
     def start_conversion(total_pages:)
       @io.puts
       @io.puts "Converting..."

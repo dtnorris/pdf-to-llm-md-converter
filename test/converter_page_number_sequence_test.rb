@@ -21,7 +21,7 @@ class ConverterPageNumberSequenceTest < Minitest::Test
       { 25 => "22", 26 => "23" }
     end
 
-    def pdf_visual_page_numbers(_input, _pages, _total_pages, _known_labels)
+    def pdf_visual_page_numbers(_input, _pages, _total_pages, _known_labels, _progress = nil)
       { 27 => "24" }
     end
 

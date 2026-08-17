@@ -57,7 +57,8 @@ module PdfToLlmMd
           input,
           missing_page_labels,
           total_pages,
-          page_labels
+          page_labels,
+          progress
         )
         page_labels = visual_page_numbers.merge(page_labels).freeze
       end
@@ -242,12 +243,28 @@ module PdfToLlmMd
       )
     end
 
-    def pdf_visual_page_numbers(input, pages, total_pages, known_labels)
+    def pdf_visual_page_numbers(input, pages, total_pages, known_labels, progress = nil)
+      preprocessing_progress = if progress
+        lambda do |current:, total_pages:|
+          if current.zero?
+            notify(progress, :start_preprocessing, total_pages: total_pages)
+          else
+            notify(
+              progress,
+              :preprocessing_advance,
+              current: current,
+              total_pages: total_pages
+            )
+          end
+        end
+      end
+
       VisualPageNumbers.extract(
         input: input,
         pages: pages,
         total_pages: total_pages,
-        known_labels: known_labels
+        known_labels: known_labels,
+        progress: preprocessing_progress
       )
     end
 

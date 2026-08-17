@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "minitest/autorun"
+require "minitest/mock"
 require "tmpdir"
 require "yaml"
 
@@ -50,6 +51,14 @@ class ConverterProgressEventsTest < Minitest::Test
 
     def inspect_pdf(total_pages:)
       @events << [:inspect_pdf, total_pages]
+    end
+
+    def start_preprocessing(total_pages:)
+      @events << [:start_preprocessing, total_pages]
+    end
+
+    def preprocessing_advance(current:, total_pages:)
+      @events << [:preprocessing_advance, current, total_pages]
     end
 
     def start_conversion(total_pages:)
@@ -221,6 +230,67 @@ class ConverterProgressEventsTest < Minitest::Test
         ],
         reporter.events
       )
+    end
+  end
+
+
+  def test_emits_preprocessing_progress_events_from_visual_detection
+    Dir.mktmpdir do |tmpdir|
+      input_path = File.join(tmpdir, "sample.pdf")
+      output_dir = File.join(tmpdir, "build")
+      config_path = File.join(tmpdir, "conversion.yml")
+
+      File.write(input_path, "%PDF fake fixture")
+      File.write(
+        config_path,
+        {
+          "output" => {
+            "filename_suffix" => "_LLM_Edition.md"
+          },
+          "validation" => {
+            "require_page_markers" => true,
+            "minimum_characters_per_page" => 0,
+            "maximum_blank_page_ratio" => 1.0,
+            "flag_patterns" => []
+          }
+        }.to_yaml
+      )
+
+      reporter = RecordingReporter.new
+      converter = TestConverter.new(
+        config_path: config_path,
+        adapter: FakeAdapter.new
+      )
+
+      visible_extract = ->(input:, pages:, total_pages:) { {} }
+      visual_extract = lambda do |input:, pages:, total_pages:, known_labels:, progress:|
+        progress.call(current: 0, total_pages: pages.length)
+        pages.each_index do |index|
+          progress.call(current: index + 1, total_pages: pages.length)
+        end
+        {}
+      end
+
+      PdfToLlmMd::VisiblePageNumbers.stub(:extract, visible_extract) do
+        PdfToLlmMd::VisualPageNumbers.stub(:extract, visual_extract) do
+          converter.convert(
+            input: input_path,
+            output_dir: output_dir,
+            progress: reporter
+          )
+        end
+      end
+
+      assert_equal [
+        [:start_preprocessing, 3],
+        [:preprocessing_advance, 1, 3],
+        [:preprocessing_advance, 2, 3],
+        [:preprocessing_advance, 3, 3]
+      ], reporter.events.select { |event| event.first.to_s.include?("preprocessing") }
+
+      preprocessing_done = reporter.events.index([:preprocessing_advance, 3, 3])
+      conversion_started = reporter.events.index([:start_conversion, 3])
+      assert_operator preprocessing_done, :<, conversion_started
     end
   end
 
