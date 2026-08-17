@@ -8,6 +8,7 @@ require "yaml"
 require_relative "assembler"
 require_relative "docling_adapter"
 require_relative "page_labels"
+require_relative "visible_page_numbers"
 require_relative "validator"
 
 module PdfToLlmMd
@@ -38,6 +39,15 @@ module PdfToLlmMd
       
       pages = (from_page..to_page).to_a
       page_labels = pdf_page_labels(input, pages)
+      missing_page_labels = pages.reject { |page| page_labels.key?(page) }
+      unless missing_page_labels.empty?
+        visible_page_numbers = pdf_visible_page_numbers(
+          input,
+          missing_page_labels,
+          total_pages
+        )
+        page_labels = visible_page_numbers.merge(page_labels).freeze
+      end
       
       notify(
         progress,
@@ -199,6 +209,14 @@ module PdfToLlmMd
 
     def pdf_page_labels(input, pages)
       PageLabels.extract(input: input, pages: pages)
+    end
+
+    def pdf_visible_page_numbers(input, pages, total_pages)
+      VisiblePageNumbers.extract(
+        input: input,
+        pages: pages,
+        total_pages: total_pages
+      )
     end
 
     def pdf_page_count(input)
