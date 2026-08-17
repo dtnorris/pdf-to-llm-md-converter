@@ -10,8 +10,9 @@ Ruby owns orchestration, page splitting, canonical page markers, assembly, and v
 - Ruby 3.2+
 - Bundler 4.0.17 (the version recorded in `Gemfile.lock`)
 - Python 3.10+
-- Poppler utilities: `pdfinfo` and `pdfseparate`
+- Poppler utilities: `pdfinfo`, `pdfseparate`, `pdftotext`, and `pdftoppm`
 - `qpdf`
+- `tesseract` (visual printed-page fallback)
 - Python environment with the `docling` CLI installed
 
 Docling's official CLI supports Markdown output and image placeholders. The command is configurable in `config/conversion.yml` rather than embedded in application code.
@@ -23,7 +24,7 @@ These steps are intended to work from a clean macOS development environment and 
 ### 1. Install Homebrew dependencies
 
 ```bash
-brew install ruby python poppler qpdf
+brew install ruby python poppler qpdf tesseract
 ```
 
 On Apple Silicon, make sure Homebrew Ruby is ahead of Apple's system Ruby:
@@ -109,7 +110,10 @@ python --version
 docling --help
 pdfinfo -v
 pdfseparate -v
+pdftotext -v
+pdftoppm -v
 qpdf --version
+tesseract --version
 ```
 
 If any command is missing, fix it before running `bin/convert`.
