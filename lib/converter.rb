@@ -8,6 +8,7 @@ require "yaml"
 require_relative "assembler"
 require_relative "docling_adapter"
 require_relative "page_labels"
+require_relative "page_number_sequence"
 require_relative "visible_page_numbers"
 require_relative "visual_page_numbers"
 require_relative "validator"
@@ -59,6 +60,16 @@ module PdfToLlmMd
           page_labels
         )
         page_labels = visual_page_numbers.merge(page_labels).freeze
+      end
+
+      missing_page_labels = pages.reject { |page| page_labels.key?(page) }
+      unless missing_page_labels.empty?
+        inferred_page_numbers = pdf_inferred_page_numbers(
+          pages,
+          total_pages,
+          page_labels
+        )
+        page_labels = inferred_page_numbers.merge(page_labels).freeze
       end
       
       notify(
@@ -237,6 +248,14 @@ module PdfToLlmMd
         pages: pages,
         total_pages: total_pages,
         known_labels: known_labels
+      )
+    end
+
+    def pdf_inferred_page_numbers(pages, total_pages, known_labels)
+      PageNumberSequence.infer(
+        pages: pages,
+        known_labels: known_labels,
+        total_pages: total_pages
       )
     end
 
