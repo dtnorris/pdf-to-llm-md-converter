@@ -28,6 +28,7 @@ module PdfToLlmMd
       title: nil,
       from_page: 1,
       to_page: nil,
+      printed_page_offset: nil,
       progress: nil
     )
       input = File.expand_path(input)
@@ -41,7 +42,11 @@ module PdfToLlmMd
       resolved_title = resolve_title(input, title)
       
       pages = (from_page..to_page).to_a
-      page_labels = pdf_page_labels(input, pages)
+      page_labels = if printed_page_offset.nil?
+        pdf_page_labels(input, pages)
+      else
+        offset_page_labels(pages, printed_page_offset)
+      end
       missing_page_labels = pages.reject { |page| page_labels.key?(page) }
       unless missing_page_labels.empty?
         visible_page_numbers = pdf_visible_page_numbers(
@@ -118,6 +123,18 @@ module PdfToLlmMd
     end
 
     private
+
+    def offset_page_labels(pages, offset)
+      offset = Integer(offset)
+      pages.to_h do |page|
+        printed_page = page + offset
+        # Keep every requested PDF page keyed so the existing fallback detectors
+        # are bypassed when an explicit mapping was supplied.
+        [page, printed_page.positive? ? printed_page.to_s : nil]
+      end.freeze
+    rescue ArgumentError, TypeError
+      raise ArgumentError, "printed_page_offset must be an integer"
+    end
 
     def extract_pages(input:, pages:, progress: nil)
       Dir.mktmpdir("pdf-to-llm-md-") do |tmpdir|

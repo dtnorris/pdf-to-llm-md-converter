@@ -1,12 +1,10 @@
-# frozen_string_literal: true
-
 require "rake/testtask"
 
-Rake::TestTask.new(:test) do |task|
-  task.libs << "lib"
-  task.libs << "test"
-  task.pattern = "test/**/*_test.rb"
-  task.verbose = true
+Rake::TestTask.new do |t|
+  t.libs << "lib"
+  t.libs << "test"
+  t.pattern = "test/**/*_test.rb"
+  t.warning = false
 end
 
 task default: :test

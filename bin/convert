@@ -13,7 +13,8 @@ require "progress_reporter"
 options = {
   config: ROOT.join("config", "conversion.yml").to_s,
   output_dir: ROOT.join("build").to_s,
-  from_page: 1
+  from_page: 1,
+  printed_page_offset: nil
 }
 
 parser = OptionParser.new do |opts|
@@ -48,6 +49,12 @@ parser = OptionParser.new do |opts|
     "Last PDF page (default: final page)"
   ) { |value| options[:to_page] = value }
 
+  opts.on(
+    "--printed-page-offset OFFSET",
+    Integer,
+    "Printed page = PDF page + OFFSET; bypass automatic printed-page detection"
+  ) { |value| options[:printed_page_offset] = value }
+
   opts.on("-h", "--help", "Show help") do
     puts opts
     exit 0
@@ -71,6 +78,7 @@ begin
       title: options[:title],
       from_page: options[:from_page],
       to_page: options[:to_page],
+      printed_page_offset: options[:printed_page_offset],
       progress: reporter
     )
 
