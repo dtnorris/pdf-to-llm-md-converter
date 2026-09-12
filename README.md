@@ -159,6 +159,19 @@ bin/convert fixtures/labyrinth_sample.pdf --from 3 --to 8
 
 The first Docling conversion may be significantly slower because model files are downloaded and initialized. Subsequent runs should reuse the local model cache.
 
+### Repair printed-page markers without reconversion
+
+If the Markdown content and `<!-- PDF Page N -->` markers are already good but automatic printed-page detection was wrong, relabel only the pagination metadata:
+
+```bash
+bin/relabel-printed-pages existing.md \
+  --offset -1 \
+  --expect-pages 259 \
+  --output repaired.md
+```
+
+`relabel-printed-pages` never invokes Docling or reads the PDF. It requires an explicit offset, refuses in-place mutation and output overwrite, requires unique contiguous PDF markers, removes existing `Printed Page` / `PDF Page Label` annotations immediately following PDF markers, and writes the replacement printed-page annotations to a new file. Pages whose offset result is zero or negative receive no printed-page marker. It verifies that non-pagination Markdown content is byte-for-byte identical before publishing the output.
+
 ## Troubleshooting
 
 ### `Could not find 'bundler' (4.0.17)`

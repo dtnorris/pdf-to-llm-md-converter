@@ -1,0 +1,56 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require "pathname"
+
+ROOT = Pathname.new(__dir__).join("..").expand_path
+$LOAD_PATH.unshift(ROOT.join("lib").to_s)
+
+require "page_marker_relabeler"
+
+options = { expected_pages: nil }
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/relabel-printed-pages INPUT.md --offset N --output OUTPUT.md [options]"
+  opts.on("--offset N", Integer, "Printed page = PDF page + N (required)") { |v| options[:offset] = v }
+  opts.on("--output PATH", "New Markdown output path (required; never overwritten)") { |v| options[:output] = v }
+  opts.on("--expect-pages N", Integer, "Fail unless exactly N PDF page markers exist") { |v| options[:expected_pages] = v }
+  opts.on("-h", "--help", "Show help") do
+    puts opts
+    exit 0
+  end
+end
+
+begin
+  parser.parse!
+  input = ARGV.shift
+  raise OptionParser::MissingArgument, "INPUT.md" unless input
+  raise OptionParser::MissingArgument, "--offset N" unless options.key?(:offset)
+  raise OptionParser::MissingArgument, "--output PATH" unless options[:output]
+  raise OptionParser::InvalidArgument, "unexpected arguments: #{ARGV.join(' ')}" unless ARGV.empty?
+
+  result = PdfToLlmMd::PageMarkerRelabeler.relabel!(
+    input: input,
+    output: options[:output],
+    offset: options[:offset],
+    expected_pages: options[:expected_pages]
+  )
+
+  puts <<~SUMMARY
+    Printed-page relabel: PASS
+    PDF markers: #{result.pdf_pages}
+    Printed markers before: #{result.printed_markers_before}
+    PDF page-label markers before: #{result.page_labels_before}
+    Printed markers after: #{result.printed_markers_after}
+    Offset: #{result.offset >= 0 ? '+' : ''}#{result.offset}
+    Non-pagination content SHA-256: #{result.content_sha256}
+    Input SHA-256: #{result.input_sha256}
+    Output SHA-256: #{result.output_sha256}
+    Input unchanged; no PDF conversion or Docling invocation performed
+    Wrote #{result.output_path}
+  SUMMARY
+  exit 0
+rescue OptionParser::ParseError, ArgumentError, RuntimeError => error
+  warn "ERROR: #{error.message}"
+  exit 2
+end
