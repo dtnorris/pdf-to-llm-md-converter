@@ -1,0 +1,49 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+cd "$ROOT"
+
+if ! command -v bundle >/dev/null 2>&1; then
+  echo "ERROR: Bundler is required. Install the Bundler version from Gemfile.lock, then rerun bin/setup." >&2
+  exit 1
+fi
+
+PYTHON="${PDF_TO_LLM_PYTHON:-python3}"
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+  echo "ERROR: Python 3.10+ is required. Set PDF_TO_LLM_PYTHON or install python3." >&2
+  exit 1
+fi
+
+if ! "$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+  echo "ERROR: Python 3.10+ is required: $PYTHON" >&2
+  exit 1
+fi
+
+echo "==> Ruby dependencies"
+bundle check >/dev/null 2>&1 || bundle install
+
+if [ ! -x .venv/bin/python ]; then
+  echo "==> Creating .venv with $PYTHON"
+  "$PYTHON" -m venv .venv
+else
+  echo "==> Reusing existing .venv"
+fi
+
+if ! .venv/bin/python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+  echo "ERROR: existing .venv uses Python older than 3.10; recreate .venv with Python 3.10+." >&2
+  exit 1
+fi
+
+echo "==> Docling"
+.venv/bin/python -m pip install docling
+
+if [ ! -x .venv/bin/docling ]; then
+  echo "ERROR: Docling installation completed without creating .venv/bin/docling." >&2
+  exit 1
+fi
+
+echo
+echo "Setup complete."
+echo "For direct repo work, activate the Python environment with:"
+echo "  source .venv/bin/activate"

@@ -52,34 +52,22 @@ Ruby 3.2 or newer is required.
 ```bash
 gem install bundler -v 4.0.17
 bundle --version
-bundle install
 ```
 
 Do not install Bundler into Apple's system Ruby with `sudo gem install`.
 
-### 3. Create the Python virtual environment
-
-Homebrew exposes Python as `python3` outside a virtual environment:
+### 3. Run the repository-owned setup
 
 ```bash
-python3 --version
-python3 -m venv .venv
+bin/setup
 source .venv/bin/activate
 ```
 
-Once activated, `python` should resolve inside `.venv`:
-
-```bash
-which python
-python --version
-```
-
-### 4. Install Docling
-
-```bash
-python -m pip install --upgrade pip
-python -m pip install docling
-```
+`bin/setup` is idempotent. It installs the bundled Ruby dependencies, creates or
+reuses the repository-local `.venv`, and installs Docling into that virtual
+environment. It does not install Homebrew/system packages or global Python
+packages. Set `PDF_TO_LLM_PYTHON` to override the `python3` used to create the
+virtual environment.
 
 Docling downloads model assets from Hugging Face on first use. If Hugging Face's Xet downloader fails with an error such as:
 
@@ -99,7 +87,7 @@ If this is required on your machine, make it persistent:
 echo 'export HF_HUB_DISABLE_XET=1' >> ~/.zshrc
 ```
 
-### 5. Verify all runtime dependencies
+### 4. Verify all runtime dependencies
 
 Run these before the first conversion:
 
