@@ -1,0 +1,45 @@
+---
+converter:
+  adapter: apple_vision_experimental
+  timeout_seconds: 600
+
+vision:
+  render_dpi: 300
+  recognition_language: en-US
+  timeout_seconds: 120
+  max_columns: 3
+  edge_bleed_fraction: 0.025
+  candidate_max_width: 0.65
+  candidate_max_height: 0.15
+  minimum_alpha_characters: 3
+  minimum_split_improvement: 0.55
+  minimum_column_gap: 0.16
+  minimum_cluster_weight_ratio: 0.15
+  map_noise_max_characters: 4
+  map_noise_column_distance: 0.11
+  paragraph_vertical_gap: 0.028
+
+processing:
+  page_mode: per_page
+  page_separator_command: 'pdfseparate -f %{page} -l %{page} "%{input}" "%{output_pattern}"'
+  keep_intermediate_pages: false
+  normalize_line_endings: true
+  collapse_excess_blank_lines: true
+  # Keep the experimental backend conservative while Swift is interpreted
+  # separately for each page. Burst only after measured local evidence.
+  parallel_workers: 1
+
+output:
+  filename_suffix: _LLM_Edition.md
+  include_front_matter: true
+  conversion_label: "Apple Vision Experimental 0.1"
+  image_placeholder: "[Image or figure detected by converter]"
+
+validation:
+  require_page_markers: true
+  minimum_characters_per_page: 20
+  maximum_blank_page_ratio: 0.25
+  flag_patterns:
+    - "�"
+    - "\\x00"
+    - "ERROR"

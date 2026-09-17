@@ -1,0 +1,97 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "optparse"
+require "pathname"
+require "tmpdir"
+require "yaml"
+
+ROOT = Pathname.new(__dir__).join("..").expand_path
+$LOAD_PATH.unshift(ROOT.join("lib").to_s)
+
+require "apple_vision_adapter"
+
+options = {
+  config: ROOT.join("config", "conversion_vision_experimental.yml").to_s,
+  output_dir: ROOT.join("build", "vision-layout-pilot").to_s
+}
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/vision-layout-pilot INPUT.pdf --pages 38,77,85,92 [options]"
+  opts.on("--pages LIST", "Comma-separated physical PDF page numbers") { |value| options[:pages] = value }
+  opts.on("-o", "--output-dir DIR", "Pilot output directory") { |value| options[:output_dir] = value }
+  opts.on("-c", "--config FILE", "Vision experimental configuration") { |value| options[:config] = value }
+  opts.on("-h", "--help", "Show help") do
+    puts opts
+    exit 0
+  end
+end
+
+parser.parse!
+input = ARGV.shift
+abort(parser.to_s) unless input && options[:pages]
+input = File.expand_path(input)
+abort("Input PDF not found: #{input}") unless File.file?(input)
+
+pages = options[:pages].split(",").map { |value| Integer(value.strip) }.uniq
+abort("At least one page is required") if pages.empty?
+
+config = YAML.safe_load_file(options[:config])
+adapter = PdfToLlmMd::AppleVisionAdapter.new(config: config)
+abort("Apple Vision experimental backend is unavailable on this machine") unless adapter.available?
+
+output_dir = File.expand_path(options[:output_dir])
+FileUtils.rm_rf(output_dir)
+FileUtils.mkdir_p(output_dir)
+summary = []
+
+Dir.mktmpdir("vision-layout-pilot-") do |tmpdir|
+  pages.each_with_index do |page, index|
+    puts format("[%d/%d] PDF page %d", index + 1, pages.length, page)
+    page_pdf = File.join(tmpdir, "page-#{page}.pdf")
+
+    ok = system(
+      "qpdf",
+      input,
+      "--pages",
+      ".",
+      page.to_s,
+      "--",
+      page_pdf,
+      out: File::NULL,
+      err: File::NULL
+    )
+    abort("qpdf failed extracting page #{page}") unless ok && File.file?(page_pdf)
+
+    page_output = File.join(output_dir, "page-#{page}")
+    markdown = adapter.convert(input: page_pdf, output_dir: page_output)
+    final_path = File.join(output_dir, "page-#{page}.md")
+    File.write(final_path, markdown, encoding: "UTF-8")
+
+    diagnostic_path = File.join(page_output, "page-#{page}.vision-order.json")
+    diagnostics = File.file?(diagnostic_path) ? File.read(diagnostic_path) : "{}"
+    columns = diagnostics[/"columns":\s*(\d+)/, 1] || "?"
+    edge = diagnostics[/"edge_dropped":\s*(\d+)/, 1] || "?"
+    map = diagnostics[/"map_noise_dropped":\s*(\d+)/, 1] || "?"
+    words = markdown.scan(/\b[[:alnum:]_'’-]+\b/).length
+
+    summary << [page, words, columns, edge, map, final_path]
+  end
+end
+
+summary_path = File.join(output_dir, "summary.tsv")
+File.open(summary_path, "w", encoding: "UTF-8") do |file|
+  file.puts "pdf_page\twords\tcolumns\tedge_dropped\tmap_noise_dropped\tmarkdown"
+  summary.each { |row| file.puts row.join("\t") }
+end
+
+puts
+puts "PDF  WORDS  COLS  EDGE  MAP"
+puts "---  -----  ----  ----  ---"
+summary.each do |page, words, columns, edge, map, _path|
+  puts format("%3d  %5d  %4s  %4s  %3s", page, words, columns, edge, map)
+end
+puts
+puts "Pilot output: #{output_dir}"
+puts "Summary: #{summary_path}"

@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require "pathname"
+require "yaml"
+
+ROOT = Pathname.new(__dir__).join("..").expand_path
+$LOAD_PATH.unshift(ROOT.join("lib").to_s)
+
+require "apple_vision_adapter"
+require "converter"
+require "progress_reporter"
+
+options = {
+  config: ROOT.join("config", "conversion_vision_experimental.yml").to_s,
+  output_dir: ROOT.join("build").to_s,
+  from_page: 1,
+  printed_page_offset: nil
+}
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/convert-vision-experimental INPUT.pdf [options]"
+
+  opts.on("-o", "--output-dir DIR", "Output directory (default: build)") do |value|
+    options[:output_dir] = value
+  end
+  opts.on("-c", "--config FILE", "Configuration file") { |value| options[:config] = value }
+  opts.on("--title TITLE", "Document title for front matter and output filename") do |value|
+    options[:title] = value
+  end
+  opts.on("--from PAGE", Integer, "First PDF page (default: 1)") do |value|
+    options[:from_page] = value
+  end
+  opts.on("--to PAGE", Integer, "Last PDF page (default: final page)") do |value|
+    options[:to_page] = value
+  end
+  opts.on(
+    "--printed-page-offset OFFSET",
+    Integer,
+    "Printed page = PDF page + OFFSET; bypass automatic printed-page detection"
+  ) { |value| options[:printed_page_offset] = value }
+  opts.on("-h", "--help", "Show help") do
+    puts opts
+    exit 0
+  end
+end
+
+parser.parse!
+input = ARGV.shift
+abort(parser.to_s) unless input
+
+begin
+  config = YAML.safe_load_file(options[:config])
+  adapter = PdfToLlmMd::AppleVisionAdapter.new(config: config)
+  abort("Apple Vision experimental backend is unavailable on this machine") unless adapter.available?
+
+  reporter = PdfToLlmMd::ProgressReporter.new
+  reporter.start
+
+  result = PdfToLlmMd::Converter
+    .new(config_path: options[:config], adapter: adapter)
+    .convert(
+      input: input,
+      output_dir: options[:output_dir],
+      title: options[:title],
+      from_page: options[:from_page],
+      to_page: options[:to_page],
+      printed_page_offset: options[:printed_page_offset],
+      progress: reporter
+    )
+
+  reporter.finish(output_path: result.output_path)
+  exit(result.validation.valid ? 0 : 2)
+rescue StandardError => error
+  warn "Conversion failed: #{error.class}: #{error.message}"
+  exit 1
+end
