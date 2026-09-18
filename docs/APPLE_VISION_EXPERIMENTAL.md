@@ -1,63 +1,92 @@
-# Apple Vision experimental backend
+# Apple Vision backend and automatic scanned-page routing
 
-This backend is intentionally opt-in. The existing `bin/convert` + Docling path
-is unchanged.
+Apple Vision is now one of the backends available to the normal `bin/convert`
+path. The default `auto` mode keeps text-native pages on Docling and uses Vision
+for effectively image-only/scanned pages on supported macOS systems.
 
-The experiment keeps the converter's existing qpdf page splitting, page markers,
-assembly, validation, progress reporting, and front matter. It swaps only the
-per-page extraction layer:
+The older `bin/convert-vision-experimental` entry point remains available as an
+explicit all-Vision smoke/debug path. It is no longer the only way normal
+conversion can reach Apple Vision.
 
-1. render the already-split page at 300 DPI;
-2. run macOS Vision text recognition in accurate English mode;
-3. keep normalized bounding boxes for every recognized observation;
-4. remove only extreme photographed-page edge bleed;
-5. infer one, two, or three dominant text regions automatically with weighted
-   one-dimensional clustering;
-6. reject a proposed extra column unless it has enough mass, separation, and
-   fit improvement;
-7. suppress isolated numeric map labels away from text regions; and
-8. emit regions left-to-right and text top-to-bottom within each region.
+The Vision backend keeps the converter's existing qpdf page splitting, page
+markers, assembly, structural validation, progress reporting, and front matter.
+For each scanned page it:
 
-Every experimental page begins with an HTML diagnostic comment and each inferred
-region has a `VISION REGION` comment. The adapter also writes the raw Vision TSV
-and a JSON ordering diagnostic into its per-page output directory.
+1. renders the already-split page at 300 DPI;
+2. runs macOS Vision text recognition in accurate English mode;
+3. keeps normalized bounding boxes for every recognized observation;
+4. removes only extreme photographed-page edge bleed;
+5. infers one, two, or three dominant text regions with weighted clustering;
+6. suppresses isolated numeric map labels away from text regions;
+7. records recognized/kept character counts for the extraction-quality gate; and
+8. detects strong repeated multi-cell row geometry as `table_like`.
 
-## Run through the normal converter pipeline
+Every Vision page begins with an HTML diagnostic comment and each inferred region
+has a `VISION REGION` comment. The adapter also writes the raw Vision TSV and a
+JSON ordering diagnostic into its per-page output directory.
+
+## Automatic routing rule
+
+The thresholds live in `config/conversion.yml` under `auto_backend`.
+
+- `pdftotext` native alphanumeric text >= 80 characters: use Docling.
+- 20–79 native alphanumeric characters with at least one PDF font: use Docling.
+- otherwise: treat the page as effectively scanned/image-only and use Apple
+  Vision.
+
+If the source-text inspection itself cannot run, auto mode fails closed. If a
+scanned page needs Vision but Vision is unavailable, auto mode also fails closed
+rather than silently using the known-weaker Docling OCR/layout path.
+
+Explicit overrides are available through normal conversion:
 
 ```bash
-bin/convert-vision-experimental /path/to/book.pdf \
-  --from 38 --to 39 \
-  --title "Vision experimental smoke" \
-  --output-dir build/vision-smoke
+bin/convert /path/to/book.pdf --backend auto
+bin/convert /path/to/book.pdf --backend docling
+bin/convert /path/to/book.pdf --backend apple-vision
 ```
 
-The experimental config defaults to one worker. Do not increase concurrency
-until local wall-clock measurements show that repeated Swift startup is worth
-bursting.
+## Dense tables
 
-## Fixed Micro Dungeons morphology panel
+Vision's prose-column reading order is not treated as semantically safe for dense
+tables. A page is flagged table-like only from repeated row geometry containing
+at least four short cells across a broad horizontal span, repeated across enough
+rows. This deliberately does not classify ordinary three-column/stat-block
+layouts merely because they use three columns.
 
-The backend contains no page-specific layout profiles. To test the same code
-unchanged across the previously adjudicated morphology panel:
+For a scanned table-like page, auto mode runs Docling as a fallback. The fallback
+is accepted only when Docling emits repeated Markdown/HTML table rows and retains
+at least 60% of the text characters Vision recognized. If those conditions are
+not met, the Vision result is marked review-required and the extraction-quality
+gate fails the conversion. There are no book- or page-number-specific exceptions.
 
-```bash
-bin/vision-layout-pilot /Users/davidnorris/code/Micro-Dungeons-Annual-2024.pdf \
-  --pages 38,39,76,77,79,85,88,92,118,119,158,167,169,192,194 \
-  --output-dir build/vision-microdungeons-panel
+## Extraction-quality gate
+
+This is separate from the existing structural validator. It does not raise the
+global minimum page length. Instead it fails severe reference-relative collapse:
+
+- text-native pages whose extraction retains less than 55% of sufficiently
+  substantial native PDF text, with at least 100 characters missing;
+- Vision pages whose emitted text retains less than 55% of sufficiently
+  substantial Vision-recognized text, with at least 100 characters missing; and
+- table-like pages still selected as Apple Vision prose output.
+
+Sparse covers, separators, map-heavy pages, and other genuinely sparse pages are
+therefore not rejected merely because they contain few words.
+
+## Micro Dungeons morphology panel
+
+The backend contains no page-specific layout profiles. The fixed safety panel is:
+
+```text
+38,39,85,88,92,187,204
 ```
 
-That panel intentionally contains:
+Pages 38, 39, 85, 88, and 92 should produce materially usable adventure text.
+Pages 187 and 204 must either select a structurally adequate Docling table
+fallback or fail extraction quality for review; flattened Vision table prose is
+not a clean pass.
 
-- one-column continuation layouts: 118, 119, 158;
-- ordinary two-column layouts: 39, 76, 192, 194;
-- map-heavy two-column layouts: 38, 77, 79, 88, 92;
-- three-column/stat-block layout: 85; and
-- photographed neighboring-page bleed: 92, 119, 167, 169.
-
-The pilot prints word count, inferred region count, edge drops, and map-noise
-drops, and preserves page Markdown plus raw Vision TSV/JSON diagnostics for
-semantic adjudication.
-
-This is not yet the default conversion path and should not be used to overwrite
-canonical Markdown until the fixed panel and a larger false-negative sample have
-been reviewed.
+The separate `bin/vision-layout-pilot` remains useful for broader Vision-only
+morphology diagnostics. This routing/gate work does not claim to solve every PDF
+layout or reconstruct arbitrary tables.

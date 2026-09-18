@@ -1,11 +1,42 @@
 ---
 converter:
-  adapter: docling
+  adapter: auto
   executable: docling
   # Tokens available to the adapter: %{input}, %{output_dir}
   command: '%{executable} "%{input}" --to md --output "%{output_dir}" --image-export-mode placeholder --no-ocr'
   timeout_seconds: 600
   ocr_min_text_characters: 20
+
+auto_backend:
+  # Clearly native pages remain on Docling. Sparse pages need both some native
+  # text and at least one PDF font; otherwise auto treats them as scanned.
+  native_text_characters: 80
+  sparse_native_text_characters: 20
+  table_fallback_min_rows: 3
+  table_fallback_min_vision_coverage: 0.60
+
+vision:
+  render_dpi: 300
+  recognition_language: en-US
+  timeout_seconds: 120
+  max_columns: 3
+  edge_bleed_fraction: 0.025
+  candidate_max_width: 0.65
+  candidate_max_height: 0.15
+  minimum_alpha_characters: 3
+  minimum_split_improvement: 0.55
+  minimum_column_gap: 0.16
+  minimum_cluster_weight_ratio: 0.15
+  map_noise_max_characters: 4
+  map_noise_column_distance: 0.11
+  paragraph_vertical_gap: 0.028
+  table_row_y_tolerance: 0.015
+  table_min_cells_per_row: 4
+  table_min_rows: 4
+  table_min_row_span: 0.45
+  table_cell_max_width: 0.28
+  table_min_short_cell_ratio: 0.60
+  table_min_row_ratio: 0.20
 
 processing:
   page_mode: per_page
@@ -29,3 +60,10 @@ validation:
     - "�"
     - "\\x00"
     - "ERROR"
+
+extraction_quality:
+  # This gate is intentionally reference-relative: sparse pages are not rejected
+  # solely for being sparse.
+  minimum_reference_characters: 120
+  minimum_missing_characters: 100
+  minimum_coverage_ratio: 0.55

@@ -34,7 +34,14 @@ module PdfToLlmMd
       "minimum_cluster_weight_ratio" => 0.15,
       "map_noise_max_characters" => 4,
       "map_noise_column_distance" => 0.11,
-      "paragraph_vertical_gap" => 0.028
+      "paragraph_vertical_gap" => 0.028,
+      "table_row_y_tolerance" => 0.015,
+      "table_min_cells_per_row" => 4,
+      "table_min_rows" => 4,
+      "table_min_row_span" => 0.45,
+      "table_cell_max_width" => 0.28,
+      "table_min_short_cell_ratio" => 0.60,
+      "table_min_row_ratio" => 0.20
     }.freeze
 
     MAPLIKE = /\A[\s\d°•.xX+*×\-()]+\z/
@@ -70,6 +77,8 @@ module PdfToLlmMd
       edge_dropped, body = observations.partition { |observation| edge_bleed?(observation) }
       body = observations.dup if body.empty?
 
+      recognized_characters = observation_characters(body)
+      table = table_geometry(body)
       cluster = infer_columns(body)
       centers = cluster.centers
 
@@ -84,8 +93,9 @@ module PdfToLlmMd
       end
 
       lines = [
-        "<!-- APPLE VISION EXPERIMENTAL columns=#{centers.length} " \
-          "edge_dropped=#{edge_dropped.length} map_noise_dropped=#{map_dropped.length} -->"
+        "<!-- APPLE VISION columns=#{centers.length} " \
+          "edge_dropped=#{edge_dropped.length} map_noise_dropped=#{map_dropped.length} " \
+          "table_like=#{table.fetch("table_like")} -->"
       ]
 
       columns.each_with_index do |column, index|
@@ -104,9 +114,12 @@ module PdfToLlmMd
         "centers" => centers.map { |center| center.round(4) },
         "input_observations" => observations.length,
         "kept_observations" => body.length,
+        "input_characters" => observation_characters(observations),
+        "recognized_characters" => recognized_characters,
+        "kept_characters" => observation_characters(body),
         "edge_dropped" => edge_dropped.length,
         "map_noise_dropped" => map_dropped.length
-      }
+      }.merge(table)
 
       Result.new(markdown: markdown, diagnostics: diagnostics.freeze)
     end
@@ -215,6 +228,52 @@ module PdfToLlmMd
 
       centers.map { |center| (observation.cx - center).abs }.min >
         config_float("map_noise_column_distance")
+    end
+
+    def table_geometry(observations)
+      rows = []
+      tolerance = config_float("table_row_y_tolerance")
+
+      observations.sort_by { |observation| -observation.cy }.each do |observation|
+        row = rows.find { |candidate| (candidate[:cy] - observation.cy).abs <= tolerance }
+
+        if row
+          count = row[:observations].length
+          row[:cy] = ((row[:cy] * count) + observation.cy) / (count + 1)
+          row[:observations] << observation
+        else
+          rows << { cy: observation.cy, observations: [observation] }
+        end
+      end
+
+      qualifying_rows = rows.count do |row|
+        cells = row.fetch(:observations)
+        next false if cells.length < config_integer("table_min_cells_per_row")
+
+        left = cells.map(&:x).min
+        right = cells.map { |cell| cell.x + cell.width }.max
+        span = right - left
+        short_ratio = cells.count do |cell|
+          cell.width <= config_float("table_cell_max_width")
+        end.fdiv(cells.length)
+
+        span >= config_float("table_min_row_span") &&
+          short_ratio >= config_float("table_min_short_cell_ratio")
+      end
+
+      row_ratio = rows.empty? ? 0.0 : qualifying_rows.fdiv(rows.length)
+      table_like = qualifying_rows >= config_integer("table_min_rows") &&
+        row_ratio >= config_float("table_min_row_ratio")
+
+      {
+        "table_like" => table_like,
+        "table_rows" => qualifying_rows,
+        "table_row_ratio" => row_ratio.round(4)
+      }
+    end
+
+    def observation_characters(observations)
+      observations.sum { |observation| observation.text.scan(/[[:alnum:]]/).length }
     end
 
     def render_column(column)

@@ -7,6 +7,8 @@ require "tmpdir"
 require "yaml"
 require_relative "assembler"
 require_relative "docling_adapter"
+require_relative "extraction_quality_validator"
+require_relative "extraction_result"
 require_relative "page_labels"
 require_relative "page_number_sequence"
 require_relative "visible_page_numbers"
@@ -14,12 +16,13 @@ require_relative "visual_page_numbers"
 require_relative "validator"
 
 module PdfToLlmMd
-  ConversionResult = Data.define(:output_path, :validation, :pages)
+  ConversionResult = Data.define(:output_path, :validation, :extraction_quality, :pages)
 
   class Converter
     def initialize(config_path:, adapter: nil)
       @config = YAML.safe_load_file(config_path)
       @adapter = adapter || DoclingAdapter.new(config: @config)
+      @extraction_results = {}
     end
 
     def convert(
@@ -86,6 +89,7 @@ module PdfToLlmMd
       )
       
       FileUtils.mkdir_p(output_dir)
+      @extraction_results = {}
       page_documents = extract_pages(
         input: input,
         pages: pages,
@@ -108,6 +112,17 @@ module PdfToLlmMd
         markdown: markdown,
         expected_pages: pages
       )
+      extraction_quality = ExtractionQualityValidator.new(config: @config).validate(
+        page_results: pages.to_h do |page|
+          [page, @extraction_results.fetch(page) do
+            ExtractionResult.new(
+              markdown: page_documents.fetch(page, ""),
+              backend: adapter_name(@adapter),
+              diagnostics: {}.freeze
+            )
+          end]
+        end
+      )
       
       notify(
         progress,
@@ -118,11 +133,23 @@ module PdfToLlmMd
       ConversionResult.new(
         output_path: output_path,
         validation: validation,
+        extraction_quality: extraction_quality,
         pages: pages.freeze
       )
     end
 
     private
+
+    def adapter_name(adapter)
+      name = adapter.class.name.to_s.split("::").last
+      case name
+      when "DoclingAdapter" then "docling"
+      when "AppleVisionAdapter" then "apple-vision"
+      when "AutoAdapter" then "auto"
+      else
+        name.empty? ? "unknown" : name.gsub(/Adapter\z/, "").downcase
+      end
+    end
 
     def offset_page_labels(pages, offset)
       offset = Integer(offset)
@@ -168,13 +195,25 @@ module PdfToLlmMd
                 "docling-page-#{format('%04d', page)}"
               )
     
-              markdown = @adapter.convert(
-                input: page_pdf,
-                output_dir: page_output
-              )
+              extraction = if @adapter.respond_to?(:convert_with_metadata)
+                @adapter.convert_with_metadata(
+                  input: page_pdf,
+                  output_dir: page_output
+                )
+              else
+                ExtractionResult.new(
+                  markdown: @adapter.convert(
+                    input: page_pdf,
+                    output_dir: page_output
+                  ),
+                  backend: adapter_name(@adapter),
+                  diagnostics: {}.freeze
+                )
+              end
     
               mutex.synchronize do
-                documents[page] = markdown
+                documents[page] = extraction.markdown
+                @extraction_results[page] = extraction
                 completed += 1
     
                 notify(

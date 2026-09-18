@@ -3,18 +3,23 @@
 
 require "optparse"
 require "pathname"
+require "yaml"
 
 ROOT = Pathname.new(__dir__).join("..").expand_path
 $LOAD_PATH.unshift(ROOT.join("lib").to_s)
 
+require "apple_vision_adapter"
+require "auto_adapter"
 require "converter"
+require "docling_adapter"
 require "progress_reporter"
 
 options = {
   config: ROOT.join("config", "conversion.yml").to_s,
   output_dir: ROOT.join("build").to_s,
   from_page: 1,
-  printed_page_offset: nil
+  printed_page_offset: nil,
+  backend: nil
 }
 
 parser = OptionParser.new do |opts|
@@ -49,6 +54,13 @@ parser = OptionParser.new do |opts|
     "Last PDF page (default: final page)"
   ) { |value| options[:to_page] = value }
 
+
+  opts.on(
+    "--backend BACKEND",
+    %w[auto docling apple-vision],
+    "Extraction backend: auto, docling, or apple-vision (default: config; normally auto)"
+  ) { |value| options[:backend] = value }
+
   opts.on(
     "--printed-page-offset OFFSET",
     Integer,
@@ -67,11 +79,29 @@ input = ARGV.shift
 abort(parser.to_s) unless input
 
 begin
+  config = YAML.safe_load_file(options[:config])
+  backend = (options[:backend] || config.dig("converter", "adapter") || "auto").to_s
+  adapter = case backend
+  when "auto"
+    PdfToLlmMd::AutoAdapter.new(config: config)
+  when "docling"
+    PdfToLlmMd::DoclingAdapter.new(config: config)
+  when "apple-vision"
+    PdfToLlmMd::AppleVisionAdapter.new(config: config).tap do |candidate|
+      unless candidate.available?
+        raise PdfToLlmMd::AdapterError,
+              "Apple Vision backend requires macOS, xcrun, and pdftoppm"
+      end
+    end
+  else
+    raise ArgumentError, "Unknown backend: #{backend.inspect}"
+  end
+
   reporter = PdfToLlmMd::ProgressReporter.new
   reporter.start
 
   result = PdfToLlmMd::Converter
-    .new(config_path: options[:config])
+    .new(config_path: options[:config], adapter: adapter)
     .convert(
       input: input,
       output_dir: options[:output_dir],
@@ -84,7 +114,17 @@ begin
 
   reporter.finish(output_path: result.output_path)
 
-  exit(result.validation.valid ? 0 : 2)
+  quality = result.extraction_quality
+  backend_counts = quality.pages.values.map { |page| page.fetch("backend") }.tally
+  puts "Extraction quality: #{quality.valid ? 'PASS' : 'FAIL'} " \
+       "(#{backend_counts.map { |name, count| "#{name}=#{count}" }.join(', ')})"
+
+  quality.issues.each do |issue|
+    warn "Extraction quality failure: PDF page #{issue.page} " \
+         "[#{issue.backend}] #{issue.reason}"
+  end
+
+  exit(result.validation.valid && quality.valid ? 0 : 2)
 rescue StandardError => error
   warn "Conversion failed: #{error.class}: #{error.message}"
   exit 1

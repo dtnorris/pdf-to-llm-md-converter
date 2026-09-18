@@ -2,11 +2,12 @@
 
 A Ruby-first pilot for converting PDF books into page-addressable Markdown suitable for downstream editorial and LLM review.
 
-Ruby owns orchestration, page splitting, canonical page markers, assembly, and validation. Docling is invoked through its command-line interface and can later be replaced behind the adapter boundary.
+Ruby owns orchestration, page splitting, canonical page markers, assembly, and validation. The normal converter now routes each isolated page between Docling and Apple Vision using deterministic source-text signals, while keeping the adapter boundary explicit for debugging and reproducibility.
 
 ## Requirements
 
 - macOS with Homebrew (commands below assume Apple Silicon; Intel paths may differ)
+- Xcode Command Line Tools / `xcrun` for Apple Vision OCR in automatic scanned-page mode
 - Ruby 3.2+
 - Bundler 4.0.17 (the version recorded in `Gemfile.lock`)
 - Python 3.10+
@@ -145,6 +146,46 @@ Convert a limited range:
 bin/convert fixtures/labyrinth_sample.pdf --from 3 --to 8
 ```
 
+### Automatic backend selection
+
+`bin/convert` defaults to `--backend auto`. For each qpdf-isolated page, auto mode
+uses `pdftotext` plus PDF-font presence to decide whether the page has enough
+native text to remain on Docling. Pages that are effectively image-only/scanned
+use Apple Vision when macOS, `xcrun`, and `pdftoppm` are available.
+
+Force a backend when reproducing or debugging a conversion:
+
+```bash
+bin/convert input.pdf --backend docling
+bin/convert input.pdf --backend apple-vision
+bin/convert input.pdf --backend auto
+```
+
+If auto mode classifies a page as scanned and Apple Vision is unavailable, the
+conversion fails closed instead of silently falling back to Docling OCR. A forced
+`--backend apple-vision` likewise fails deterministically when its platform
+dependencies are unavailable.
+
+Vision remains deliberately conservative around dense tables. Repeated multi-cell
+row geometry is treated as table-like. Auto mode tries Docling as a fallback only
+when Docling emits actual table structure with adequate text coverage; otherwise
+the page is marked extraction-quality invalid and requires review. No
+page-number-specific routing rules are used.
+
+### Extraction-quality validation
+
+Structural validation (page markers, duplicates/missing pages, gross blankness,
+and flagged characters) remains separate from the extraction-quality gate. The
+quality gate compares extracted text with independent evidence available for the
+page, such as native PDF text or Vision-recognized observations, and rejects
+severe coverage collapse. Sparse pages are not rejected solely because they have
+few words.
+
+A quality failure prints the PDF page number, selected backend, and the triggered
+reason, and `bin/convert` exits with status 2 even if structural validation passes.
+The Markdown is left in the requested output directory for diagnosis, but the CLI
+does not report the conversion as clean.
+
 The first Docling conversion may be significantly slower because model files are downloaded and initialized. Subsequent runs should reuse the local model cache.
 
 ### Repair printed-page markers without reconversion
@@ -254,8 +295,8 @@ This first pass deliberately processes one PDF page at a time so every output se
 The converter does not yet:
 
 - compare output against the existing hand-reviewed LLM Edition;
-- describe maps or artwork beyond Docling placeholders;
-- repair malformed tables or reading order;
+- describe maps or artwork beyond extraction placeholders;
+- generically reconstruct dense table semantics when neither backend preserves them;
 - implement a PyMuPDF4LLM comparison adapter;
 - retain structured Docling JSON alongside Markdown.
 
