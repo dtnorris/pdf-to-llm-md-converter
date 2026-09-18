@@ -35,6 +35,7 @@ vision:
   table_min_rows: 4
   table_min_row_span: 0.45
   table_cell_max_width: 0.28
+  table_cell_max_characters: 20
   table_min_short_cell_ratio: 0.60
   table_min_row_ratio: 0.20
 

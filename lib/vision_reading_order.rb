@@ -40,6 +40,7 @@ module PdfToLlmMd
       "table_min_rows" => 4,
       "table_min_row_span" => 0.45,
       "table_cell_max_width" => 0.28,
+      "table_cell_max_characters" => 20,
       "table_min_short_cell_ratio" => 0.60,
       "table_min_row_ratio" => 0.20
     }.freeze
@@ -254,7 +255,8 @@ module PdfToLlmMd
         right = cells.map { |cell| cell.x + cell.width }.max
         span = right - left
         short_ratio = cells.count do |cell|
-          cell.width <= config_float("table_cell_max_width")
+          cell.width <= config_float("table_cell_max_width") &&
+            observation_character_count(cell) <= config_integer("table_cell_max_characters")
         end.fdiv(cells.length)
 
         span >= config_float("table_min_row_span") &&
@@ -272,8 +274,12 @@ module PdfToLlmMd
       }
     end
 
+    def observation_character_count(observation)
+      observation.text.scan(/[[:alnum:]]/).length
+    end
+
     def observation_characters(observations)
-      observations.sum { |observation| observation.text.scan(/[[:alnum:]]/).length }
+      observations.sum { |observation| observation_character_count(observation) }
     end
 
     def render_column(column)
