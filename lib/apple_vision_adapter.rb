@@ -7,6 +7,7 @@ require "rbconfig"
 require "timeout"
 require "tmpdir"
 require_relative "docling_adapter"
+require_relative "extraction_result"
 require_relative "vision_reading_order"
 
 module PdfToLlmMd
@@ -20,6 +21,10 @@ module PdfToLlmMd
     end
 
     def convert(input:, output_dir:)
+      convert_with_metadata(input: input, output_dir: output_dir).markdown
+    end
+
+    def convert_with_metadata(input:, output_dir:)
       unless available?
         raise AdapterError,
               "Apple Vision experimental backend requires macOS, xcrun, and pdftoppm"
@@ -51,7 +56,11 @@ module PdfToLlmMd
           encoding: "UTF-8"
         )
 
-        result.markdown
+        ExtractionResult.new(
+          markdown: result.markdown,
+          backend: "apple-vision",
+          diagnostics: result.diagnostics.freeze
+        )
       end
     end
 
