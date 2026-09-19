@@ -37,6 +37,8 @@ vision:
   table_cell_max_width: 0.28
   table_cell_max_characters: 20
   table_min_short_cell_ratio: 0.60
+  # Dense tables are compact across the page; stat blocks only have compact sub-rows.
+  table_min_page_compact_ratio: 0.80
   table_min_row_ratio: 0.20
 
 processing:

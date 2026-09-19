@@ -42,6 +42,7 @@ module PdfToLlmMd
       "table_cell_max_width" => 0.28,
       "table_cell_max_characters" => 20,
       "table_min_short_cell_ratio" => 0.60,
+      "table_min_page_compact_ratio" => 0.80,
       "table_min_row_ratio" => 0.20
     }.freeze
 
@@ -254,24 +255,30 @@ module PdfToLlmMd
         left = cells.map(&:x).min
         right = cells.map { |cell| cell.x + cell.width }.max
         span = right - left
-        short_ratio = cells.count do |cell|
-          cell.width <= config_float("table_cell_max_width") &&
-            observation_character_count(cell) <= config_integer("table_cell_max_characters")
-        end.fdiv(cells.length)
+        short_ratio = cells.count { |cell| compact_table_cell?(cell) }.fdiv(cells.length)
 
         span >= config_float("table_min_row_span") &&
           short_ratio >= config_float("table_min_short_cell_ratio")
       end
 
       row_ratio = rows.empty? ? 0.0 : qualifying_rows.fdiv(rows.length)
+      page_compact_ratio = observations.empty? ? 0.0 :
+        observations.count { |observation| compact_table_cell?(observation) }.fdiv(observations.length)
       table_like = qualifying_rows >= config_integer("table_min_rows") &&
-        row_ratio >= config_float("table_min_row_ratio")
+        row_ratio >= config_float("table_min_row_ratio") &&
+        page_compact_ratio >= config_float("table_min_page_compact_ratio")
 
       {
         "table_like" => table_like,
         "table_rows" => qualifying_rows,
-        "table_row_ratio" => row_ratio.round(4)
+        "table_row_ratio" => row_ratio.round(4),
+        "table_page_compact_ratio" => page_compact_ratio.round(4)
       }
+    end
+
+    def compact_table_cell?(observation)
+      observation.width <= config_float("table_cell_max_width") &&
+        observation_character_count(observation) <= config_integer("table_cell_max_characters")
     end
 
     def observation_character_count(observation)

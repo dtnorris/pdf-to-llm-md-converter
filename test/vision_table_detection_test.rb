@@ -86,6 +86,38 @@ class VisionTableDetectionTest < Minitest::Test
     assert_operator result.diagnostics.fetch("table_rows"), :<, 4
   end
 
+  def test_compact_stat_rows_with_substantial_prose_are_not_classified_as_table_like
+    observations = []
+
+    8.times do |row|
+      y = 0.86 - (row * 0.07)
+      [
+        [0.06, "CR #{row}"],
+        [0.29, "AC #{12 + row}"],
+        [0.52, "HP #{40 + row}"],
+        [0.75, "+#{row} / #{10 + row}"]
+      ].each do |x, text|
+        observations << obs(text, x: x, y: y, width: 0.14)
+      end
+    end
+
+    9.times do |row|
+      observations << obs(
+        "Substantial stat block prose describing traits and actions #{row}",
+        x: 0.10,
+        y: 0.825 - (row * 0.07),
+        width: 0.34
+      )
+    end
+
+    result = orderer.render(observations)
+
+    assert_operator result.diagnostics.fetch("table_rows"), :>=, 4
+    assert_operator result.diagnostics.fetch("table_row_ratio"), :>=, 0.20
+    assert_operator result.diagnostics.fetch("table_page_compact_ratio"), :<, 0.80
+    refute result.diagnostics.fetch("table_like")
+  end
+
   private
 
   def orderer
