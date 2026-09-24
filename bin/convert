@@ -11,6 +11,7 @@ $LOAD_PATH.unshift(ROOT.join("lib").to_s)
 require "apple_vision_adapter"
 require "auto_adapter"
 require "converter"
+require "conversion_receipt"
 require "docling_adapter"
 require "progress_reporter"
 
@@ -114,6 +115,11 @@ begin
 
   reporter.finish(output_path: result.output_path)
 
+  receipt = PdfToLlmMd::ConversionReceipt.write(
+    input_path: input,
+    result: result
+  )
+
   quality = result.extraction_quality
   backend_counts = quality.pages.values.map { |page| page.fetch("backend") }.tally
   puts "Extraction quality: #{quality.valid ? 'PASS' : 'FAIL'} " \
@@ -124,7 +130,24 @@ begin
          "[#{issue.backend}] #{issue.reason}"
   end
 
-  exit(result.validation.valid && quality.valid ? 0 : 2)
+  puts "Conversion receipt: #{receipt.path}"
+  puts "Conversion state: #{receipt.payload.fetch('state').upcase}"
+
+  case receipt.payload.fetch("state")
+  when "needs_page_review"
+    first_page = quality.issues.map(&:page).min
+    puts "Markdown was retained for diagnosis and is NOT ready for downstream use."
+    puts "Review the first flagged page with:"
+    puts "  #{ROOT.join('bin', 'review-page-exception')} " \
+         "#{receipt.path} --page #{first_page}"
+  when "invalid"
+    puts "Markdown was retained for diagnosis and is NOT ready for downstream use."
+    puts "Resolve structural validation failures before accepting page exceptions."
+  else
+    puts "Markdown is ready for downstream use."
+  end
+
+  exit(receipt.payload.fetch("downstream_ready") ? 0 : 2)
 rescue StandardError => error
   warn "Conversion failed: #{error.class}: #{error.message}"
   exit 1

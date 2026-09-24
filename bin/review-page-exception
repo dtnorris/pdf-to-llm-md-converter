@@ -1,0 +1,98 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require "pathname"
+require "shellwords"
+
+ROOT = Pathname.new(__dir__).join("..").expand_path
+$LOAD_PATH.unshift(ROOT.join("lib").to_s)
+
+require "conversion_receipt"
+
+options = {
+  accept_exception: false
+}
+
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: bin/review-page-exception RECEIPT.json --page PAGE [options]"
+
+  opts.on("--page PAGE", Integer, "PDF page whose extraction-quality issue is being reviewed") do |value|
+    options[:page] = value
+  end
+
+  opts.on("--reason TEXT", "Human review rationale for accepting the page-specific exception") do |value|
+    options[:reason] = value
+  end
+
+  opts.on(
+    "--accept-exception",
+    "Record an explicit exception for all currently unresolved extraction-quality issues on PAGE"
+  ) do
+    options[:accept_exception] = true
+  end
+
+  opts.on("-h", "--help", "Show help") do
+    puts opts
+    exit 0
+  end
+end
+
+parser.parse!
+receipt_path = ARGV.shift
+abort(parser.to_s) unless receipt_path && options[:page]
+abort("Unexpected arguments: #{ARGV.join(' ')}") unless ARGV.empty?
+
+begin
+  review = PdfToLlmMd::ConversionReceipt.inspect_page(
+    path: receipt_path,
+    page: options[:page]
+  )
+
+  puts "Receipt: #{review.fetch('receipt_path')}"
+  puts "State: #{review.fetch('state').upcase}"
+  puts "Source PDF: #{review.dig('source', 'path')}"
+  puts "Markdown: #{review.dig('output', 'path')}"
+  puts "PDF page #{review.fetch('page')} unresolved extraction-quality issue(s):"
+  review.fetch("issues").each do |issue|
+    puts "- [#{issue.fetch('backend')}] #{issue.fetch('reason')}"
+  end
+
+  unless options[:accept_exception]
+    puts
+    puts "No changes made. Diagnostic output is not accepted automatically."
+    puts "After inspecting the source page and Markdown, record a supported exception with:"
+    puts "  #{Shellwords.escape($PROGRAM_NAME)} " \
+         "#{Shellwords.escape(review.fetch('receipt_path'))} " \
+         "--page #{review.fetch('page')} --reason \"REVIEW RATIONALE\" --accept-exception"
+    exit 0
+  end
+
+  if options[:reason].to_s.strip.empty?
+    abort("--reason is required with --accept-exception")
+  end
+
+  result = PdfToLlmMd::ConversionReceipt.accept_page_exception(
+    path: receipt_path,
+    page: options[:page],
+    reason: options[:reason]
+  )
+
+  puts
+  puts "Recorded reviewed page exception."
+  puts "Receipt: #{result.path}"
+  puts "State: #{result.payload.fetch('state').upcase}"
+
+  if result.unresolved_pages.empty?
+    puts "Unresolved extraction-quality pages: none"
+    puts "Next: the conversion is ready for downstream use with reviewed exceptions recorded in the receipt."
+  else
+    puts "Unresolved extraction-quality pages: #{result.unresolved_pages.join(', ')}"
+    puts "Next: review PDF page #{result.unresolved_pages.first}."
+    puts "  #{Shellwords.escape($PROGRAM_NAME)} " \
+         "#{Shellwords.escape(result.path)} --page #{result.unresolved_pages.first}"
+  end
+rescue PdfToLlmMd::ConversionReceipt::Error => error
+  warn "Page-exception review failed: #{error.message}"
+  exit 2
+end
