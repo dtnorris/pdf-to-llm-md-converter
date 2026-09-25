@@ -1,0 +1,58 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "pathname"
+require "rbconfig"
+require "shellwords"
+
+ROOT = Pathname.new(__dir__).join("..").expand_path
+
+passthrough = []
+refresh_pages = []
+cache_dir = nil
+cache_enabled = true
+
+args = ARGV.dup
+until args.empty?
+  argument = args.shift
+
+  case argument
+  when "--refresh-page"
+    value = args.shift
+    abort("--refresh-page requires a PDF page number") unless value
+    refresh_pages << Integer(value, 10)
+  when /\A--refresh-page=(.+)\z/
+    refresh_pages << Integer(Regexp.last_match(1), 10)
+  when "--page-cache-dir"
+    cache_dir = args.shift
+    abort("--page-cache-dir requires a directory") unless cache_dir
+  when /\A--page-cache-dir=(.+)\z/
+    cache_dir = Regexp.last_match(1)
+  when "--no-page-cache"
+    cache_enabled = false
+  else
+    passthrough << argument
+  end
+end
+
+if !cache_enabled && !refresh_pages.empty?
+  abort("--refresh-page cannot be used with --no-page-cache")
+end
+
+ENV["PDF_TO_LLM_PAGE_CACHE"] = cache_enabled ? "1" : "0"
+ENV["PDF_TO_LLM_PAGE_CACHE_REPORT"] = "1"
+ENV["PDF_TO_LLM_REFRESH_PAGES"] = refresh_pages.uniq.sort.join(",")
+if cache_dir
+  ENV["PDF_TO_LLM_PAGE_CACHE_DIR"] = File.expand_path(cache_dir)
+else
+  ENV.delete("PDF_TO_LLM_PAGE_CACHE_DIR")
+end
+
+exec(
+  RbConfig.ruby,
+  "-I",
+  ROOT.join("lib").to_s,
+  "-rconverter_page_cache",
+  ROOT.join("bin", "convert").to_s,
+  *passthrough
+)
