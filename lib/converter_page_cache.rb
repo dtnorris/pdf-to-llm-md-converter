@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "digest"
+require_relative "apple_vision_adapter"
 require_relative "converter"
+require_relative "docling_adapter"
 require_relative "page_extraction_cache"
 
 module PdfToLlmMd
@@ -101,6 +103,7 @@ module PdfToLlmMd
               cache_hit = !extraction.nil?
 
               unless extraction
+                extraction_adapter = refresh_page ? refresh_adapter_for(page) : @adapter
                 page_pdf = extract_page(
                   input: input,
                   page: page,
@@ -112,18 +115,18 @@ module PdfToLlmMd
                   "docling-page-#{format('%04d', page)}"
                 )
 
-                extraction = if @adapter.respond_to?(:convert_with_metadata)
-                  @adapter.convert_with_metadata(
+                extraction = if extraction_adapter.respond_to?(:convert_with_metadata)
+                  extraction_adapter.convert_with_metadata(
                     input: page_pdf,
                     output_dir: page_output
                   )
                 else
                   ExtractionResult.new(
-                    markdown: @adapter.convert(
+                    markdown: extraction_adapter.convert(
                       input: page_pdf,
                       output_dir: page_output
                     ),
-                    backend: adapter_name(@adapter),
+                    backend: adapter_name(extraction_adapter),
                     diagnostics: {}.freeze
                   )
                 end
@@ -169,6 +172,16 @@ module PdfToLlmMd
         Integer(value, 10)
       end.uniq.sort
 
+      @page_cache_refresh_backends = parse_refresh_backends(
+        ENV.fetch("PDF_TO_LLM_REFRESH_PAGE_BACKENDS", "")
+      )
+
+      backend_only_pages = @page_cache_refresh_backends.keys - @page_cache_refresh_pages
+      unless backend_only_pages.empty?
+        raise ArgumentError,
+              "Refresh backend pages require matching refresh pages: #{backend_only_pages.join(', ')}"
+      end
+
       if !@page_cache_enabled && !@page_cache_refresh_pages.empty?
         raise ArgumentError,
               "Refresh pages require page cache to be enabled"
@@ -181,7 +194,38 @@ module PdfToLlmMd
         File.expand_path(explicit_root)
       end
     rescue ArgumentError
-      raise ArgumentError, "PDF_TO_LLM_REFRESH_PAGES must contain positive integer PDF pages"
+      raise ArgumentError,
+            "PDF_TO_LLM_REFRESH_PAGES and PDF_TO_LLM_REFRESH_PAGE_BACKENDS must contain valid positive PDF pages"
+    end
+
+    def parse_refresh_backends(text)
+      text.split(",").reject(&:empty?).to_h do |entry|
+        page_text, backend = entry.split("=", 2)
+        page = Integer(page_text, 10)
+        unless page.positive? && %w[docling apple-vision].include?(backend)
+          raise ArgumentError
+        end
+        [page, backend]
+      end
+    end
+
+    def refresh_adapter_for(page)
+      backend = @page_cache_refresh_backends.fetch(page, nil)
+      return @adapter unless backend
+
+      case backend
+      when "docling"
+        DoclingAdapter.new(config: @config)
+      when "apple-vision"
+        AppleVisionAdapter.new(config: @config).tap do |candidate|
+          unless candidate.available?
+            raise AdapterError,
+                  "Apple Vision backend requires macOS, xcrun, and pdftoppm"
+          end
+        end
+      else
+        raise ArgumentError, "Unsupported refresh backend: #{backend.inspect}"
+      end
     end
 
     def page_cache_enabled?

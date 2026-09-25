@@ -9,6 +9,7 @@ ROOT = Pathname.new(__dir__).join("..").expand_path
 
 passthrough = []
 refresh_pages = []
+refresh_page_backends = {}
 cache_dir = nil
 cache_enabled = true
 
@@ -23,6 +24,16 @@ until args.empty?
     refresh_pages << Integer(value, 10)
   when /\A--refresh-page=(.+)\z/
     refresh_pages << Integer(Regexp.last_match(1), 10)
+  when "--refresh-page-backend"
+    value = args.shift
+    abort("--refresh-page-backend requires PAGE=BACKEND") unless value
+    page, backend = value.split("=", 2)
+    abort("--refresh-page-backend requires PAGE=BACKEND") unless page && backend
+    refresh_page_backends[Integer(page, 10)] = backend
+  when /\A--refresh-page-backend=(.+)\z/
+    page, backend = Regexp.last_match(1).split("=", 2)
+    abort("--refresh-page-backend requires PAGE=BACKEND") unless page && backend
+    refresh_page_backends[Integer(page, 10)] = backend
   when "--page-cache-dir"
     cache_dir = args.shift
     abort("--page-cache-dir requires a directory") unless cache_dir
@@ -35,13 +46,27 @@ until args.empty?
   end
 end
 
-if !cache_enabled && !refresh_pages.empty?
+if !cache_enabled && (!refresh_pages.empty? || !refresh_page_backends.empty?)
   abort("--refresh-page cannot be used with --no-page-cache")
+end
+
+unsupported_backends = refresh_page_backends.values.uniq - %w[docling apple-vision]
+unless unsupported_backends.empty?
+  abort("unsupported --refresh-page-backend value(s): #{unsupported_backends.join(', ')}")
+end
+
+missing_refresh_pages = refresh_page_backends.keys - refresh_pages
+unless missing_refresh_pages.empty?
+  abort("--refresh-page-backend requires matching --refresh-page for PDF page(s): #{missing_refresh_pages.sort.join(', ')}")
 end
 
 ENV["PDF_TO_LLM_PAGE_CACHE"] = cache_enabled ? "1" : "0"
 ENV["PDF_TO_LLM_PAGE_CACHE_REPORT"] = "1"
 ENV["PDF_TO_LLM_REFRESH_PAGES"] = refresh_pages.uniq.sort.join(",")
+ENV["PDF_TO_LLM_REFRESH_PAGE_BACKENDS"] = refresh_page_backends
+  .sort
+  .map { |page, backend| "#{page}=#{backend}" }
+  .join(",")
 if cache_dir
   ENV["PDF_TO_LLM_PAGE_CACHE_DIR"] = File.expand_path(cache_dir)
 else

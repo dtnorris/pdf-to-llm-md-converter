@@ -55,12 +55,14 @@ class ConverterPageCacheTest < Minitest::Test
       "PDF_TO_LLM_PAGE_CACHE" => ENV["PDF_TO_LLM_PAGE_CACHE"],
       "PDF_TO_LLM_PAGE_CACHE_DIR" => ENV["PDF_TO_LLM_PAGE_CACHE_DIR"],
       "PDF_TO_LLM_PAGE_CACHE_REPORT" => ENV["PDF_TO_LLM_PAGE_CACHE_REPORT"],
-      "PDF_TO_LLM_REFRESH_PAGES" => ENV["PDF_TO_LLM_REFRESH_PAGES"]
+      "PDF_TO_LLM_REFRESH_PAGES" => ENV["PDF_TO_LLM_REFRESH_PAGES"],
+      "PDF_TO_LLM_REFRESH_PAGE_BACKENDS" => ENV["PDF_TO_LLM_REFRESH_PAGE_BACKENDS"]
     }
     ENV["PDF_TO_LLM_PAGE_CACHE"] = "1"
     ENV["PDF_TO_LLM_PAGE_CACHE_REPORT"] = "0"
     ENV.delete("PDF_TO_LLM_PAGE_CACHE_DIR")
     ENV["PDF_TO_LLM_REFRESH_PAGES"] = ""
+    ENV["PDF_TO_LLM_REFRESH_PAGE_BACKENDS"] = ""
   end
 
   def teardown
@@ -93,6 +95,40 @@ class ConverterPageCacheTest < Minitest::Test
       assert_equal [1, 2, 2, 3], adapter.calls.sort
       assert_equal 2, third_converter.page_cache_stats.fetch(:hits)
       assert_equal 1, third_converter.page_cache_stats.fetch(:refreshed)
+    end
+  end
+
+  def test_targeted_refresh_can_override_backend_inside_existing_cache_namespace
+    Dir.mktmpdir do |tmpdir|
+      input, output_dir, config_path = fixture(tmpdir)
+      adapter = CountingAdapter.new
+      vision = CountingAdapter.new
+
+      TestConverter.new(config_path: config_path, adapter: adapter).convert(
+        input: input,
+        output_dir: output_dir
+      )
+
+      ENV["PDF_TO_LLM_REFRESH_PAGES"] = "2"
+      ENV["PDF_TO_LLM_REFRESH_PAGE_BACKENDS"] = "2=apple-vision"
+      repair = TestConverter.new(config_path: config_path, adapter: adapter)
+
+      repair.stub(:refresh_adapter_for, ->(page) { page == 2 ? vision : adapter }) do
+        repair.convert(input: input, output_dir: output_dir)
+      end
+
+      assert_equal [1, 2, 3], adapter.calls.sort
+      assert_equal [2], vision.calls
+      assert_equal 2, repair.page_cache_stats.fetch(:hits)
+      assert_equal 1, repair.page_cache_stats.fetch(:refreshed)
+
+      ENV["PDF_TO_LLM_REFRESH_PAGES"] = ""
+      ENV["PDF_TO_LLM_REFRESH_PAGE_BACKENDS"] = ""
+      reused = TestConverter.new(config_path: config_path, adapter: adapter)
+      reused.convert(input: input, output_dir: output_dir)
+
+      assert_equal 3, reused.page_cache_stats.fetch(:hits)
+      assert_equal [1, 2, 3], adapter.calls.sort
     end
   end
 
