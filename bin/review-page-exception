@@ -6,6 +6,9 @@ require "pathname"
 require "shellwords"
 
 ROOT = Pathname.new(__dir__).join("..").expand_path
+ADVENTURE_FINDER_ROOT = Pathname.new(
+  ENV.fetch("AF_ADVENTURE_FINDER_ROOT", ROOT.parent.join("adventure-finder").to_s)
+).expand_path
 $LOAD_PATH.unshift(ROOT.join("lib").to_s)
 
 require "conversion_receipt"
@@ -83,9 +86,17 @@ begin
   puts "Receipt: #{result.path}"
   puts "State: #{result.payload.fetch('state').upcase}"
 
-  if result.unresolved_pages.empty?
+  if result.unresolved_pages.empty? && result.payload.fetch("downstream_ready")
+    source_pdf = result.payload.dig("source", "path")
+    catalog = ADVENTURE_FINDER_ROOT.join("bin", "af-catalog")
     puts "Unresolved extraction-quality pages: none"
-    puts "Next: the conversion is ready for downstream use with reviewed exceptions recorded in the receipt."
+    puts
+    puts "Next command:"
+    puts "  cd #{Shellwords.escape(ADVENTURE_FINDER_ROOT.to_s)}"
+    puts "  #{Shellwords.escape(catalog.to_s)} #{Shellwords.escape(source_pdf.to_s)}"
+  elsif result.unresolved_pages.empty?
+    puts "Unresolved extraction-quality pages: none"
+    puts "Next command: none until the remaining conversion/structural validation failure is resolved."
   else
     puts "Unresolved extraction-quality pages: #{result.unresolved_pages.join(', ')}"
     puts "Next: review PDF page #{result.unresolved_pages.first}."
