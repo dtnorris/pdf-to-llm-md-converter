@@ -4,6 +4,30 @@ A Ruby-first pilot for converting PDF books into page-addressable Markdown suita
 
 Ruby owns orchestration, page splitting, canonical page markers, assembly, and validation. The normal converter now routes each isolated page between Docling and Apple Vision using deterministic source-text signals, while keeping the adapter boundary explicit for debugging and reproducibility.
 
+## How conversion works
+
+In the default `auto` mode, the converter chooses an extraction backend for each PDF page.
+
+```mermaid
+flowchart TD
+    CLI["bin/convert"] --> C["Converter"]
+    C -->|Isolate each requested PDF page| A["AutoAdapter"]
+    A -->|Native text| D["DoclingAdapter"]
+    A -->|Scanned page| V["AppleVisionAdapter"]
+    V -.->|Table-like layout triggers a Docling trial| D
+    D --> R["Per-page Markdown and diagnostics"]
+    V --> R
+    C -->|Resolve page labels| M["Assembler"]
+    R -->|Page text| M
+    M --> MD["Page-marked Markdown file"]
+    MD --> S["Validator checks document structure"]
+    R --> Q["ExtractionQualityValidator checks page quality"]
+    S --> CR["ConversionReceipt"]
+    Q --> CR
+```
+
+The converter writes the Markdown before validation finishes. Check `downstream_ready` in the sibling conversion receipt before using the output.
+
 ## Requirements
 
 - macOS with Homebrew (commands below assume Apple Silicon; Intel paths may differ)
