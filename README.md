@@ -4,6 +4,30 @@ A Ruby-first pilot for converting PDF books into page-addressable Markdown suita
 
 Ruby owns orchestration, page splitting, canonical page markers, assembly, and validation. The normal converter now routes each isolated page between Docling and Apple Vision using deterministic source-text signals, while keeping the adapter boundary explicit for debugging and reproducibility.
 
+## How conversion works
+
+In the default `auto` mode, the converter chooses an extraction backend for each PDF page.
+
+```mermaid
+flowchart TD
+    CLI["bin/convert"] --> C["Converter"]
+    C -->|Isolate each requested PDF page| A["AutoAdapter"]
+    A -->|Native text| D["DoclingAdapter"]
+    A -->|Scanned page| V["AppleVisionAdapter"]
+    V -.->|Table-like layout triggers a Docling trial| D
+    D --> R["Per-page Markdown and diagnostics"]
+    V --> R
+    C -->|Resolve page labels| M["Assembler"]
+    R -->|Page text| M
+    M --> MD["Page-marked Markdown file"]
+    MD --> S["Validator checks document structure"]
+    R --> Q["ExtractionQualityValidator checks page quality"]
+    S --> CR["ConversionReceipt"]
+    Q --> CR
+```
+
+The converter writes the Markdown before validation finishes. Check `downstream_ready` in the sibling conversion receipt before using the output.
+
 ## Requirements
 
 - macOS with Homebrew (commands below assume Apple Silicon; Intel paths may differ)
@@ -124,26 +148,24 @@ export HF_HUB_DISABLE_XET=1
 
 ## Convert a PDF
 
-General form:
+After [macOS setup](#fresh-machine-setup-macos), activate the virtual environment
+as shown under [Normal startup](#normal-startup). From the repository root,
+convert the second PDF page of the included two-page sample:
+
+```bash
+bin/convert fixtures/labyrinth_sample_2_pages.pdf --from 2 --to 2 --output-dir build/page-two
+```
+
+Look in `build/page-two/` for the Markdown and its sibling
+[conversion receipt](docs/CONVERSION_RECEIPTS.md). A clean conversion prints
+`Conversion state: READY`.
+
+To convert a whole PDF, omit the page range:
 
 ```bash
 bin/convert /path/to/input.pdf \
   --title "Document Title" \
   --output-dir /path/to/output
-```
-
-Example:
-
-```bash
-bin/convert fixtures/labyrinth_sample.pdf \
-  --title "Labyrinth Adventures — Pilot Sample" \
-  --output-dir build
-```
-
-Convert a limited range:
-
-```bash
-bin/convert fixtures/labyrinth_sample.pdf --from 3 --to 8
 ```
 
 ### Automatic backend selection
