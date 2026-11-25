@@ -124,26 +124,24 @@ export HF_HUB_DISABLE_XET=1
 
 ## Convert a PDF
 
-General form:
+After [macOS setup](#fresh-machine-setup-macos), activate the virtual environment
+as shown under [Normal startup](#normal-startup). From the repository root,
+convert the second PDF page of the included two-page sample:
+
+```bash
+bin/convert fixtures/labyrinth_sample_2_pages.pdf --from 2 --to 2 --output-dir build/page-two
+```
+
+Look in `build/page-two/` for the Markdown and its sibling
+[conversion receipt](docs/CONVERSION_RECEIPTS.md). A clean conversion prints
+`Conversion state: READY`.
+
+To convert a whole PDF, omit the page range:
 
 ```bash
 bin/convert /path/to/input.pdf \
   --title "Document Title" \
   --output-dir /path/to/output
-```
-
-Example:
-
-```bash
-bin/convert fixtures/labyrinth_sample.pdf \
-  --title "Labyrinth Adventures — Pilot Sample" \
-  --output-dir build
-```
-
-Convert a limited range:
-
-```bash
-bin/convert fixtures/labyrinth_sample.pdf --from 3 --to 8
 ```
 
 ### Automatic backend selection
